@@ -27,7 +27,7 @@
 
     - name: Copy Promtail config
       template:
-        src: files/promtail-config.yaml
+        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
         dest: /opt/promtail-config.yaml
 
     - name: Run Promtail
