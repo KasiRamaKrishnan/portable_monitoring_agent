@@ -18,7 +18,7 @@
         enabled: yes
 
     - name: Run Node Exporter
-      community.docker.docker_container:
+      docker_container:
         name: node_exporter
         image: quay.io/prometheus/node-exporter
         ports:
