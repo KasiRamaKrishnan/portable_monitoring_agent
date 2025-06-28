@@ -1,0 +1,85 @@
+- name: Setup monitoring stack on monitor node
+  hosts: monitor
+  become: yes
+  vars:
+    repo_url: "https://github.com/KasiRamaKrishnan/monitoring_agent.git"
+    repo_dest: "/home/azureuser/monitoring-agent"
+
+  tasks:
+    - name: Install dependencies
+      apt:
+        name:
+          - git
+          - docker.io
+        update_cache: yes
+        state: present
+
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+    
+    - name: Run Node Exporter
+      docker_container:
+        name: node_exporter
+        image: quay.io/prometheus/node-exporter
+        ports:
+          - "9100:9100"
+        restart_policy: always
+
+    - name: Copy Promtail config
+      template:
+        src: files/promtail-config.yaml
+        dest: /opt/promtail-config.yaml
+
+    - name: Run Promtail
+      docker_container:
+        name: promtail
+        image: grafana/promtail:2.9.4
+        volumes:
+          - /var/log:/var/log
+          - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
+        command: -config.file=/etc/promtail/promtail.yaml
+        restart_policy: always
+
+        
+    - name: Clone monitoring agent repo
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ repo_dest }}"
+        version: main
+        force: yes
+
+    - name: Generate prometheus.yml with monitor + workers
+      copy:
+        dest: "{{ repo_dest }}/prometheus.yml"
+        content: |
+          global:
+            scrape_interval: 15s
+          scrape_configs:
+            - job_name: 'monitor_node'
+              static_configs:
+                - targets: ['10.0.1.5:9100']
+            - job_name: 'worker_nodes'
+              static_configs:
+                - targets:
+                    - '10.0.1.4:9100'
+                    - '10.0.1.6:9100'
+
+    - name: Build Docker image
+      command: docker build -t monitoring-agent-kasi .
+      args:
+        chdir: "{{ repo_dest }}"
+
+    - name: Run monitoring agent container
+      docker_container:
+        name: monitor_agent_machine
+        image: monitoring-agent-kasi
+        restart_policy: always
+        ports:
+          - "3000:3000"
+          - "9090:9090"
+          - "3100:3100"
+        volumes:
+          - "{{ repo_dest }}/prometheus.yml:/etc/prometheus/prometheus.yml"

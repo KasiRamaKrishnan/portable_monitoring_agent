@@ -1,0 +1,41 @@
+- name: Setup node_exporter and promtail on worker nodes
+  hosts: workers
+  become: yes
+  vars:
+    monitor_node_ip: "10.0.1.5"  # Update with internal IP of monitor node
+
+  tasks:
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Start Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Run Node Exporter
+      docker_container:
+        name: node_exporter
+        image: quay.io/prometheus/node-exporter
+        ports:
+          - "9100:9100"
+        restart_policy: always
+
+    - name: Copy Promtail config
+      template:
+        src: files/promtail-config.yaml
+        dest: /opt/promtail-config.yaml
+
+    - name: Run Promtail
+      docker_container:
+        name: promtail
+        image: grafana/promtail:2.9.4
+        volumes:
+          - /var/log:/var/log
+          - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
+        command: -config.file=/etc/promtail/promtail.yaml
+        restart_policy: always
