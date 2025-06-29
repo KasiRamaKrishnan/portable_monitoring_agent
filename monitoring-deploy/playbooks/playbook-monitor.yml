@@ -54,7 +54,7 @@
 
     - name: Generate prometheus.yml with monitor + workers
       copy:
-        dest: "~/portable_monitoring_agent/prometheus.yml"
+        dest: "/home/azureuser/portable_monitoring_agent/prometheus.yml"
         content: |
           global:
             scrape_interval: 15s
@@ -71,7 +71,7 @@
     - name: Build Docker image
       command: docker build -t monitoring-agent-kasi .
       args:
-        chdir: "~/portable_monitoring_agent"
+        chdir: "/home/azureuser/portable_monitoring_agent"
 
     - name: Run monitoring agent container
       docker_container:
@@ -83,4 +83,4 @@
           - "9090:9090"
           - "3100:3100"
         volumes:
-          - "~/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
+          - "/home/azureuser/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
