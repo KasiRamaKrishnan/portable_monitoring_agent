@@ -1,7 +1,7 @@
 cd monitoring-deploy
 
-ssh -i ~/id_rsa sharumathims1997@gmail.com@10.0.1.4
-ssh -i ~/id_rsa sharumathims1997@gmail.com@10.0.1.6
+ssh -i ~/id_rsa azureuser@10.0.1.4
+ssh -i ~/id_rsa azureuser@10.0.1.6
 
 sudo apt-get update
 sudo apt-get install -y ansible
