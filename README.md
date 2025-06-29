@@ -76,8 +76,8 @@ cd portable_monitoring_agent/monitoring-deploy
 ansible all -i inventory.ini -m ping  # Test connectivity
 
 # Step 3: Deploy
-ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml   # Monitoring node
 ansible-playbook -i inventory.ini playbooks/playbook-workers.yml   # Worker nodes
+ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml   # Monitoring node
 ```
 
 ### Post-Deployment Access
@@ -306,21 +306,21 @@ ansible all -i inventory.ini -m ping
 # Expected output: SUCCESS for all nodes
 ```
 
-### Step 4: Deploy Monitoring Node
+### Step 4: Deploy Worker Nodes
+```bash
+# Deploy monitoring agents on worker nodes
+ansible-playbook -i inventory.ini playbooks/playbook-workers.yml
+
+# This installs: Docker, Node Exporter, Promtail
+```
+
+### Step 5: Deploy Monitoring Node
 ```bash
 # Deploy complete monitoring stack on monitoring node
 ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml
 
 # Monitor deployment progress
 # This installs: Docker, Prometheus, Grafana, Loki, Node Exporter, Promtail
-```
-
-### Step 5: Deploy Worker Nodes
-```bash
-# Deploy monitoring agents on worker nodes
-ansible-playbook -i inventory.ini playbooks/playbook-workers.yml
-
-# This installs: Docker, Node Exporter, Promtail
 ```
 
 ## Configuration
