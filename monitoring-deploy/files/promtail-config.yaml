@@ -15,5 +15,8 @@ scrape_configs:
           - localhost
         labels:
           job: varlogs
-          host: "{{ ansible_hostname }}"
           __path__: /var/log/*.log
+
+    pipeline_stages:
+      - static_labels:
+          hostname: "{{ ansible_hostname }}"
