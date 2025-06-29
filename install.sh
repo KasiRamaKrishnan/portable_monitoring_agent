@@ -1,4 +1,4 @@
-ssh -i ~/.ssh/id_rsa azureuser@<publicIP of Monitoring Node>
+cd monitoring-deploy
 
 ssh -i ~/id_rsa azureuser@10.0.1.4
 ssh -i ~/id_rsa azureuser@10.0.1.6
