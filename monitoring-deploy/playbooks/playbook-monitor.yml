@@ -1,9 +1,7 @@
 - name: Setup monitoring stack on monitor node
   hosts: monitor
   become: yes
-  vars:
-    repo_url: "https://github.com/KasiRamaKrishnan/monitoring_agent.git"
-    repo_dest: "/home/azureuser/monitoring-agent"
+
 
   tasks:
     - name: Install dependencies
@@ -43,17 +41,10 @@
         command: -config.file=/etc/promtail/promtail.yaml
         restart_policy: always
 
-        
-    - name: Clone monitoring agent repo
-      git:
-        repo: "{{ repo_url }}"
-        dest: "{{ repo_dest }}"
-        version: main
-        force: yes
 
     - name: Generate prometheus.yml with monitor + workers
       copy:
-        dest: "{{ repo_dest }}/prometheus.yml"
+        dest: "~/portable_monitoring_agent/prometheus.yml"
         content: |
           global:
             scrape_interval: 15s
@@ -70,7 +61,7 @@
     - name: Build Docker image
       command: docker build -t monitoring-agent-kasi .
       args:
-        chdir: "{{ repo_dest }}"
+        chdir: "~/portable_monitoring_agent"
 
     - name: Run monitoring agent container
       docker_container:
@@ -82,4 +73,4 @@
           - "9090:9090"
           - "3100:3100"
         volumes:
-          - "{{ repo_dest }}/prometheus.yml:/etc/prometheus/prometheus.yml"
+          - "~/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
