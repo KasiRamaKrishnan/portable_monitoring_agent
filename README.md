@@ -76,8 +76,8 @@ cd portable_monitoring_agent/monitoring-deploy
 ansible all -i inventory.ini -m ping  # Test connectivity
 
 # Step 3: Deploy
-ansible-playbook -i inventory.ini playbooks/playbook-workers.yml   # Worker nodes
-ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml   # Monitoring node
+ansible-playbook -i inventory.ini playbooks/playbook-workers.yml --ask-become-pass   # Worker nodes
+ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml --ask-become-pass   # Monitoring node
 ```
 
 ### Post-Deployment Access
@@ -503,10 +503,10 @@ vim inventory.ini
 ansible all -i inventory.ini -m ping
 
 # 4. Deploy monitoring node
-ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml
+ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml --ask-become-pass
 
 # 5. Deploy worker nodes  
-ansible-playbook -i inventory.ini playbooks/playbook-workers.yml
+ansible-playbook -i inventory.ini playbooks/playbook-workers.yml --ask-become-pass
 
 # 6. Access Grafana
 # http://your-monitoring-node-ip:3000 (admin/admin)
