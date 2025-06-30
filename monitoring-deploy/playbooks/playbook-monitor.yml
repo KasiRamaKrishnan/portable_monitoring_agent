@@ -12,11 +12,11 @@
         update_cache: yes
         state: present
 
-    - name: Ensure Docker is running
-      service:
-        name: docker
-        state: started
-        enabled: yes
+    #- name: Ensure Docker is running
+    #  service:
+    #    name: docker
+    #    state: started
+    #    enabled: yes
 
     - name: Install pip3
       apt:
@@ -29,12 +29,21 @@
         name: docker
    
     - name: Run Node Exporter
-      docker_container:
+      community.docker.docker_container:
         name: node_exporter
         image: quay.io/prometheus/node-exporter
         ports:
           - "9100:9100"
         restart_policy: always
+        volumes:
+          - /proc:/host/proc:ro
+          - /sys:/host/sys:ro
+          - /:/rootfs:ro
+        command:
+          - "--path.procfs=/host/proc"
+          - "--path.sysfs=/host/sys"
+          - "--path.rootfs=/rootfs"
+
 
     - name: Copy Promtail config
       template:
