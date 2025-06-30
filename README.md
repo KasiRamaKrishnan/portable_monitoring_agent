@@ -119,6 +119,7 @@ This monitoring solution implements a distributed observability stack using mode
                     ║  └─────────────┘  └─────────────┘                          ║
                     ╚═══════════════════════════════════════════════════════════════╝
 ```
+![image](https://github.com/user-attachments/assets/b7d5b25c-7f59-4373-a139-f852fc4ea59d)
 
 ### Data Flow
 
