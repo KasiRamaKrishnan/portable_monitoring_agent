@@ -64,7 +64,7 @@
 
     - name: Generate prometheus.yml with monitor + workers
       copy:
-        dest: "/home/ubuntu/portable_monitoring_agent/prometheus.yml"
+        dest: "~/portable_monitoring_agent/prometheus.yml"
         content: |
           global:
             scrape_interval: 15s
@@ -92,4 +92,4 @@
           - "9090:9090"
           - "3100:3100"
         volumes:
-          - "/home/azureuser/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
+          - "~/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
