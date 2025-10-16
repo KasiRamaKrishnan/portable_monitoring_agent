@@ -2,32 +2,35 @@
   hosts: monitor
   become: yes
 
-
   tasks:
     - name: Install dependencies
       apt:
         name:
           - git
           - docker.io
+          - python3-venv
         update_cache: yes
         state: present
 
-    #- name: Ensure Docker is running
-    #  service:
-    #    name: docker
-    #    state: started
-    #    enabled: yes
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
 
-    - name: Install pip3
-      apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
+    - name: Create Python virtual environment for monitoring
+      command: python3 -m venv /opt/monitoring-venv
+      args:
+        creates: /opt/monitoring-venv
 
-    - name: Install Docker SDK for Python
+    - name: Upgrade pip in virtual environment
+      command: /opt/monitoring-venv/bin/pip install --upgrade pip
+
+    - name: Install Docker SDK for Python in venv
       pip:
         name: docker
-   
+        virtualenv: /opt/monitoring-venv
+
     - name: Run Node Exporter
       community.docker.docker_container:
         name: node_exporter
@@ -44,7 +47,6 @@
           - "--path.sysfs=/host/sys"
           - "--path.rootfs=/rootfs"
 
-
     - name: Copy Promtail config
       template:
         src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
@@ -59,7 +61,6 @@
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
         command: -config.file=/etc/promtail/promtail.yaml
         restart_policy: always
-
 
     - name: Generate prometheus.yml with monitor + workers
       copy:
@@ -77,7 +78,7 @@
                     - '10.0.1.4:9100'
                     - '10.0.1.6:9100'
 
-    - name: Build Docker image
+    - name: Build Docker image for monitoring agent
       command: docker build -t monitoring-agent-kasi .
       args:
         chdir: "/home/azureuser/portable_monitoring_agent"
