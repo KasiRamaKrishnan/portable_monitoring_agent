@@ -1,0 +1,27 @@
+Initial connections
+
+ssh -i "sree.pem" ubuntu@ec2-13-201-98-75.ap-south-1.compute.amazonaws.com
+
+ssh -i "sree.pem" ubuntu@ec2-52-66-253-38.ap-south-1.compute.amazonaws.com
+
+Copy pem files
+
+scp -i sree.pem sree.pem ubuntu@13.201.98.75:~/sree.pem
+
+scp -i sree.pem sree.pem ubuntu@52.66.253.38:~/sree.pem
+
+
+
+Ansible installation in monitor node
+
+sudo apt update -y
+sudo apt upgrade -y
+
+
+sudo apt install software-properties-common -y
+
+sudo add-apt-repository --yes --update ppa:ansible/ansible
+
+sudo apt install ansible -y
+
+ansible --version
