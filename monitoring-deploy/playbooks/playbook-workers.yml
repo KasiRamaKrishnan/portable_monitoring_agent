@@ -2,7 +2,7 @@
   hosts: workers
   become: yes
   vars:
-    monitor_node_ip: "10.0.1.5"  # internal IP of monitor node
+    monitor_node_ip: "13.201.98.75"  # internal IP of monitor node
     ssh_key_path: "/home/ubuntu/sree.pem"  # absolute path to your private key
 
   tasks:
