@@ -49,7 +49,7 @@
 
     - name: Copy Promtail config
       template:
-        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
+        src: /home/ubuntu/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
         dest: /opt/promtail-config.yaml
 
     - name: Run Promtail
@@ -64,7 +64,7 @@
 
     - name: Generate prometheus.yml with monitor + workers
       copy:
-        dest: "~/portable_monitoring_agent/prometheus.yml"
+        dest: "/home/ubuntu/portable_monitoring_agent/prometheus.yml"
         content: |
           global:
             scrape_interval: 15s
@@ -80,7 +80,7 @@
     - name: Build Docker image for monitoring agent
       command: docker build -t monitoring-agent-kasi .
       args:
-        chdir: "/home/azureuser/portable_monitoring_agent"
+        chdir: "/home/ubuntu/portable_monitoring_agent"
 
     - name: Run monitoring agent container
       docker_container:
@@ -92,4 +92,4 @@
           - "9090:9090"
           - "3100:3100"
         volumes:
-          - "~/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
+          - "/home/ubuntu/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
