@@ -1,0 +1,4 @@
+monitor_ip: 13.201.98.75
+worker_ip: 52.66.253.38
+ansible_user: ubuntu
+ansible_ssh_private_key_file: ~/sree.pem
