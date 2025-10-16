@@ -3,10 +3,10 @@ server:
   grpc_listen_port: 0
 
 positions:
-  filename: /tmp/positions.yaml
+  filename: /var/lib/promtail/positions.yaml
 
 clients:
-  - url: http://{{ monitor_node_ip }}:3100/loki/api/v1/push
+  - url: http://localhost:3100/loki/api/v1/push
 
 scrape_configs:
   - job_name: system
@@ -15,8 +15,8 @@ scrape_configs:
           - localhost
         labels:
           job: varlogs
-          __path__: /var/log/*.log
+        __path__: /var/log/*.log
 
     pipeline_stages:
       - static_labels:
-          hostname: "{{ ansible_hostname }}"
+          hostname: ubuntu
