@@ -22,7 +22,7 @@
         state: started
         enabled: yes
 
-    - name: Ensure user can run Docker without sudo (optional)
+    - name: Ensure user can run Docker without sudo
       user:
         name: ubuntu
         groups: docker
@@ -52,9 +52,9 @@
         group: ubuntu
         mode: '0755'
 
-    - name: Copy Promtail config to host
+    - name: Copy Promtail Jinja template config to host
       template:
-        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
+        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml.j2
         dest: /opt/promtail-config.yaml
         owner: ubuntu
         group: ubuntu
@@ -65,10 +65,7 @@
         name: promtail
         image: grafana/promtail:2.9.4
         volumes:
-          - /var/log:/var/log               # log files
+          - /var/log:/var/log
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
-          - /var/lib/promtail:/var/lib/promtail   # positions file directory
-        env:
-          MONITOR_IP: "{{ hostvars['monitor_node']['monitor_node_ip'] }}"
-        command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
+          - /var/lib/promtail:/var/lib/promtail
         restart_policy: always
