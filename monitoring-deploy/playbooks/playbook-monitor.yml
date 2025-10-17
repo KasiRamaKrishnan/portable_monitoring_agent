@@ -47,22 +47,36 @@
           - "--path.sysfs=/host/sys"
           - "--path.rootfs=/rootfs"
 
-    - name: Copy Promtail config
-      template:
-        src: /home/ubuntu/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
-        dest: /opt/promtail-config.yaml
+    - name: Create Promtail data directory
+      file:
+        path: /var/lib/promtail
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
 
-    - name: Run Promtail
+    - name: Copy Promtail Jinja template config to host
+      template:
+        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml.j2
+        dest: /opt/promtail-config.yaml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Run Promtail container
       docker_container:
         name: promtail
         image: grafana/promtail:2.9.4
+        network_mode: host
         volumes:
           - /var/log:/var/log
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
+          - /var/lib/promtail:/var/lib/promtail
         env:
-          MONITOR_IP: "{{ monitor_node_ip }}"       
+          MONITOR_IP: "{{ monitor_node_ip }}"
         command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
         restart_policy: always
+
 
     - name: Generate prometheus.yml dynamically
       template:
