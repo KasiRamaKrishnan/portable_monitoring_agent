@@ -2,32 +2,35 @@
   hosts: monitor
   become: yes
 
-
   tasks:
     - name: Install dependencies
       apt:
         name:
           - git
           - docker.io
+          - python3-venv
         update_cache: yes
         state: present
 
-    #- name: Ensure Docker is running
-    #  service:
-    #    name: docker
-    #    state: started
-    #    enabled: yes
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
 
-    - name: Install pip3
-      apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
+    - name: Create Python virtual environment for monitoring
+      command: python3 -m venv /opt/monitoring-venv
+      args:
+        creates: /opt/monitoring-venv
 
-    - name: Install Docker SDK for Python
+    - name: Upgrade pip in virtual environment
+      command: /opt/monitoring-venv/bin/pip install --upgrade pip
+
+    - name: Install Docker SDK for Python in venv
       pip:
         name: docker
-   
+        virtualenv: /opt/monitoring-venv
+
     - name: Run Node Exporter
       community.docker.docker_container:
         name: node_exporter
@@ -44,43 +47,47 @@
           - "--path.sysfs=/host/sys"
           - "--path.rootfs=/rootfs"
 
+    - name: Create Promtail data directory
+      file:
+        path: /var/lib/promtail
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
 
-    - name: Copy Promtail config
+    - name: Copy Promtail Jinja template config to host
       template:
-        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
+        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml.j2
         dest: /opt/promtail-config.yaml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
 
-    - name: Run Promtail
+    - name: Run Promtail container
       docker_container:
         name: promtail
         image: grafana/promtail:2.9.4
+        network_mode: host
         volumes:
           - /var/log:/var/log
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
-        command: -config.file=/etc/promtail/promtail.yaml
+          - /var/lib/promtail:/var/lib/promtail
+        env:
+          MONITOR_IP: "{{ monitor_node_ip }}"
+        command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
         restart_policy: always
 
 
-    - name: Generate prometheus.yml with monitor + workers
-      copy:
-        dest: "/home/azureuser/portable_monitoring_agent/prometheus.yml"
-        content: |
-          global:
-            scrape_interval: 15s
-          scrape_configs:
-            - job_name: 'monitor_node'
-              static_configs:
-                - targets: ['10.0.1.5:9100']
-            - job_name: 'worker_nodes'
-              static_configs:
-                - targets:
-                    - '10.0.1.4:9100'
-                    - '10.0.1.6:9100'
+    - name: Generate prometheus.yml dynamically
+      template:
+        src: /home/ubuntu/portable_monitoring_agent/monitoring-deploy/files/prometheus.yml.j2
+        dest: /home/ubuntu/portable_monitoring_agent/prometheus.yml
 
-    - name: Build Docker image
+
+    - name: Build Docker image for monitoring agent
       command: docker build -t monitoring-agent-kasi .
       args:
-        chdir: "/home/azureuser/portable_monitoring_agent"
+        chdir: "/home/ubuntu/portable_monitoring_agent"
 
     - name: Run monitoring agent container
       docker_container:
@@ -92,4 +99,4 @@
           - "9090:9090"
           - "3100:3100"
         volumes:
-          - "/home/azureuser/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
+          - "/home/ubuntu/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
