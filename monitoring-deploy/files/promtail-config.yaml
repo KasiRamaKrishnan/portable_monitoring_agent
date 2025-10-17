@@ -16,6 +16,3 @@ scrape_configs:
         labels:
           job: varlogs
           hostname: ${HOSTNAME}   # hostname label
-
-# Enable environment variable expansion
-config_expansion: true
