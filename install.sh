@@ -40,4 +40,5 @@ echo "🎉 Ansible installation and configuration completed successfully!"
 
 
 ansible-playbook -i inventory.ini playbooks/playbook-workers.yml
+ansible-playbook -i inventory.ini playbooks/playbook-windows.yml
 ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml
