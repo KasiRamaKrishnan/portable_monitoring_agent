@@ -62,20 +62,11 @@
         command: -config.file=/etc/promtail/promtail.yaml
         restart_policy: always
 
-    - name: Generate prometheus.yml with monitor + workers
-      copy:
-        dest: "/home/ubuntu/portable_monitoring_agent/prometheus.yml"
-        content: |
-          global:
-            scrape_interval: 15s
-          scrape_configs:
-            - job_name: 'monitor_node'
-              static_configs:
-                - targets: ['13.201.98.75:9100']
-            - job_name: 'worker_nodes'
-              static_configs:
-                - targets:
-                    - '52.66.253.38:9100'
+    - name: Generate prometheus.yml dynamically
+      template:
+        src: /home/ubuntu/portable_monitoring_agent/monitoring-deploy/files/prometheus.yml.j2
+        dest: /home/ubuntu/portable_monitoring_agent/prometheus.yml
+
 
     - name: Build Docker image for monitoring agent
       command: docker build -t monitoring-agent-kasi .

@@ -1,4 +1,4 @@
-monitor_ip: 13.201.98.75
-worker_ip: 52.66.253.38
+monitor_ip: "{{ hostvars['monitor_node']['ansible_host'] }}"
+worker_ips: "{{ groups['workers'] | map('extract', hostvars, ['ansible_host']) | list }}"
 ansible_user: ubuntu
 ansible_ssh_private_key_file: ~/sree.pem
