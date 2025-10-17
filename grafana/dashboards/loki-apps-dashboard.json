@@ -20,7 +20,7 @@
   "fiscalYearStartMonth": 0,
   "gnetId": 13639,
   "graphTooltip": 0,
-  "id": 5,
+  "id": 6,
   "links": [
     {
       "icon": "bolt",
@@ -41,7 +41,10 @@
   ],
   "panels": [
     {
+      "aliasColors": {},
       "bars": true,
+      "dashLength": 10,
+      "dashes": false,
       "datasource": {
         "type": "loki",
         "uid": "P8E80F9AEF21F6940"
@@ -52,20 +55,40 @@
         },
         "overrides": []
       },
+      "fill": 1,
+      "fillGradient": 0,
       "gridPos": {
         "h": 3,
         "w": 24,
         "x": 0,
         "y": 0
       },
+      "hiddenSeries": false,
       "id": 6,
       "legend": {
-        "show": false
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
       },
       "lines": false,
+      "linewidth": 1,
+      "nullPointMode": "null",
       "options": {
         "alertThreshold": true
       },
+      "percentage": false,
+      "pluginVersion": "10.4.1",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
       "targets": [
         {
           "datasource": {
@@ -76,8 +99,35 @@
           "refId": "A"
         }
       ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Log Rate over Time (by Host)",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
       "type": "graph",
-      "title": "Log Rate over Time (by Host)"
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        },
+        {
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
     },
     {
       "datasource": {
@@ -107,38 +157,48 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{hostname=\"$hostname\"} |= \"$search\" | logfmt",
+          "editorMode": "code",
+          "expr": "{hostname=\"$hostname\"} |= ``",
+          "queryType": "range",
           "refId": "A"
         }
       ],
+      "title": "Logs",
       "transparent": true,
-      "type": "logs",
-      "title": "Logs"
+      "type": "logs"
     }
   ],
   "refresh": false,
   "schemaVersion": 39,
+  "tags": [],
   "templating": {
     "list": [
       {
         "current": {
-          "text": "All",
-          "value": "$__all"
+          "selected": true,
+          "text": [
+            "ip-172-31-11-198"
+          ],
+          "value": [
+            "ip-172-31-11-198"
+          ]
         },
         "datasource": {
           "type": "loki",
           "uid": "P8E80F9AEF21F6940"
         },
-        "definition": "label_values({job=~\".*\"}, hostname)",
+        "definition": "",
         "hide": 0,
         "includeAll": true,
         "label": "Host",
-        "multi": false,
+        "multi": true,
         "name": "hostname",
         "options": [],
         "query": {
-          "query": "label_values({job=~\".*\"}, hostname)",
-          "refId": "Loki-hostname-Variable-Query"
+          "label": "hostname",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "",
+          "type": 1
         },
         "refresh": 1,
         "regex": "",
@@ -146,19 +206,6 @@
         "sort": 1,
         "type": "query",
         "useTags": false
-      },
-      {
-        "name": "search",
-        "label": "String Match",
-        "type": "textbox",
-        "query": "",
-        "options": [
-          {
-            "text": "",
-            "value": "",
-            "selected": true
-          }
-        ]
       }
     ]
   },
@@ -179,7 +226,9 @@
       "1d"
     ]
   },
-  "title": "Loki Logs by Host",
-  "uid": "loki-hosts-dashboard",
-  "version": 2
+  "timezone": "",
+  "title": "Loki Logs by Host Copy",
+  "uid": "cf1b0ag3f12wwf",
+  "version": 1,
+  "weekStart": ""
 }
