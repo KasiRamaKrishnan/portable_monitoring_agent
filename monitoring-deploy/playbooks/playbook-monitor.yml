@@ -60,7 +60,7 @@
           - /var/log:/var/log
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
         env:
-          MONITOR_IP: "{{ monitor_ip }}"       
+          MONITOR_IP: "{{ monitor_node_ip }}"       
         command: -config.file=/etc/promtail/promtail.yaml
         restart_policy: always
 
