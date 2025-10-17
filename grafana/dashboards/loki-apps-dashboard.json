@@ -29,7 +29,7 @@
       "targetBlank": true,
       "title": "View In Explore",
       "type": "link",
-      "url": "/explore?orgId=1&left=[\"now-1h\",\"now\",\"Loki\",{\"expr\":\"{job=\\\"$app\\\",hostname=\\\"$hostname\\\"}\"},{\"ui\":[true,true,true,\"none\"]}]"
+      "url": "/explore?orgId=1&left=[\"now-1h\",\"now\",\"Loki\",{\"expr\":\"{hostname=\\\"$hostname\\\"}\"},{\"ui\":[true,true,true,\"none\"]}]"
     },
     {
       "icon": "external link",
@@ -72,7 +72,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "sum(count_over_time({job=\"$app\", hostname=\"$node_ip\"} |= \"$search\" [$__interval]))",
+          "expr": "sum(count_over_time({hostname=\"$hostname\"} |= \"$search\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -107,7 +107,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{job=\"$app\", hostname=\"$node_ip\"} |= \"$search\" | logfmt",
+          "expr": "{hostname=\"$hostname\"} |= \"$search\" | logfmt",
           "refId": "A"
         }
       ],
@@ -121,37 +121,31 @@
   "templating": {
     "list": [
       {
-        "name": "node_type",
-        "label": "Node Type",
-        "type": "query",
-        "hide": 0,
-        "query": "monitor_node,worker_nodes",
         "current": {
-          "text": "monitor_node",
-          "value": "monitor_node"
+          "text": "All",
+          "value": "$__all"
         },
-        "includeAll": false,
-        "multi": false,
-        "refresh": 1,
-        "options": [],
-        "sort": 1
-      },
-      {
-        "name": "node_ip",
-        "label": "Node IP",
-        "type": "query",
-        "hide": 0,
         "datasource": {
           "type": "loki",
           "uid": "P8E80F9AEF21F6940"
         },
-        "query": "label_values({node_type=\"$node_type\"}, instance)",
-        "current": {},
-        "includeAll": false,
+        "definition": "label_values({job=~\".*\"}, hostname)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Host",
         "multi": false,
-        "refresh": 2,
+        "name": "hostname",
         "options": [],
-        "sort": 1
+        "query": {
+          "query": "label_values({job=~\".*\"}, hostname)",
+          "refId": "Loki-hostname-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query",
+        "useTags": false
       },
       {
         "name": "search",
@@ -185,7 +179,7 @@
       "1d"
     ]
   },
-  "title": "Loki Logs by Node Type & IP",
-  "uid": "loki-nodes-dashboard",
+  "title": "Loki Logs by Host",
+  "uid": "loki-hosts-dashboard",
   "version": 2
 }
