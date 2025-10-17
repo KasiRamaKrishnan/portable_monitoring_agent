@@ -72,7 +72,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "sum(count_over_time({job=\"$app\", hostname=\"$hostname\"} |= \"$search\" [$__interval]))",
+          "expr": "sum(count_over_time({job=\"$app\", hostname=\"$node_ip\"} |= \"$search\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -107,7 +107,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{job=\"$app\", hostname=\"$hostname\"} |= \"$search\" | logfmt",
+          "expr": "{job=\"$app\", hostname=\"$node_ip\"} |= \"$search\" | logfmt",
           "refId": "A"
         }
       ],
@@ -121,33 +121,36 @@
   "templating": {
     "list": [
       {
-        "name": "app",
-        "label": "App",
+        "name": "node_type",
+        "label": "Node Type",
         "type": "query",
-        "datasource": {
-          "type": "loki",
-          "uid": "P8E80F9AEF21F6940"
+        "hide": 0,
+        "query": "monitor_node,worker_nodes",
+        "current": {
+          "text": "monitor_node",
+          "value": "monitor_node"
         },
-        "definition": "label_values(job)",
-        "query": "label_values(job)",
-        "refresh": 1,
         "includeAll": false,
         "multi": false,
+        "refresh": 1,
+        "options": [],
         "sort": 1
       },
       {
-        "name": "hostname",
-        "label": "Host",
+        "name": "node_ip",
+        "label": "Node IP",
         "type": "query",
+        "hide": 0,
         "datasource": {
           "type": "loki",
           "uid": "P8E80F9AEF21F6940"
         },
-        "definition": "label_values(hostname)",
-        "query": "label_values(hostname)",
-        "refresh": 1,
+        "query": "label_values({node_type=\"$node_type\"}, instance)",
+        "current": {},
         "includeAll": false,
         "multi": false,
+        "refresh": 2,
+        "options": [],
         "sort": 1
       },
       {
@@ -182,7 +185,7 @@
       "1d"
     ]
   },
-  "title": "Loki Logs by App & Host",
-  "uid": "loki-apps-dashboard",
+  "title": "Loki Logs by Node Type & IP",
+  "uid": "loki-nodes-dashboard",
   "version": 2
 }
