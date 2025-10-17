@@ -19,4 +19,4 @@ scrape_configs:
 
     pipeline_stages:
       - static_labels:
-          hostname: ubuntu
+          hostname: ${HOSTNAME}
