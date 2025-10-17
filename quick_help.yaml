@@ -1,13 +1,13 @@
 Initial connections
 
-ssh -i "sree.pem" ubuntu@ec2-13-233-23-172.ap-south-1.compute.amazonaws.com
+ssh -i "sree.pem" ubuntu@ec2-13-203-77-103.ap-south-1.compute.amazonaws.com
 
 ssh -i "sree.pem" ubuntu@ec2-3-111-52-16.ap-south-1.compute.amazonaws.com
 ssh -i "sree.pem" ubuntu@ec2-65-2-57-141.ap-south-1.compute.amazonaws.com
 
 Copy pem files
 
-scp -i sree.pem sree.pem ubuntu@13.233.23.172:~/sree.pem
+scp -i sree.pem sree.pem ubuntu@13.203.77.103:~/sree.pem
 
 scp -i sree.pem sree.pem ubuntu@13.201.131.71:~/sree.pem
 scp -i sree.pem sree.pem ubuntu@65.2.57.141:~/sree.pem
