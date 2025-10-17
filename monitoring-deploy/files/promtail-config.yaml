@@ -15,4 +15,5 @@ scrape_configs:
           - localhost
         labels:
           job: varlogs
-          hostname: ${HOSTNAME}   # hostname label
+          hostname: ${HOSTNAME}   # this will become the container hostname
+        __path__: /var/log/*.log  # logs to collect

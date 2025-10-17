@@ -69,6 +69,6 @@
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
           - /var/lib/promtail:/var/lib/promtail   # positions file directory
         env:
-          MONITOR_IP: "{{ monitor_node_ip }}"
+          MONITOR_IP: "{{ hostvars['monitor_node']['monitor_node_ip'] }}"
         command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
         restart_policy: always
