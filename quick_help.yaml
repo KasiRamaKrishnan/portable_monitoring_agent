@@ -13,19 +13,9 @@ scp -i sree.pem sree.pem ubuntu@13.201.131.71:~/sree.pem
 scp -i sree.pem sree.pem ubuntu@65.2.57.141:~/sree.pem
 
 
-Ansible installation in monitor node
+chmod +x install_ansible.sh
 
-sudo apt update -y
-sudo apt upgrade -y
-
-
-sudo apt install software-properties-common -y
-
-sudo add-apt-repository --yes --update ppa:ansible/ansible
-
-sudo apt install ansible -y
-
-ansible --version
+./install_ansible.sh
 
 
 
