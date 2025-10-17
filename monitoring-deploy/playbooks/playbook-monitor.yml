@@ -2,6 +2,11 @@
   hosts: monitor
   become: yes
 
+  vars:
+    monitor_ip: "{{ hostvars[groups['monitor'][0]]['ansible_host'] }}"
+    worker_ips: "{{ groups['workers'] | map('extract', hostvars, ['ansible_host']) | list }}"
+    windows_ips: "{{ groups['windows'] | map('extract', hostvars, ['ansible_host']) | list }}"
+
   tasks:
     - name: Install dependencies
       apt:
@@ -73,16 +78,18 @@
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
           - /var/lib/promtail:/var/lib/promtail
         env:
-          MONITOR_IP: "{{ monitor_node_ip }}"
+          MONITOR_IP: "{{ monitor_ip }}"
         command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
         restart_policy: always
 
-
-    - name: Generate prometheus.yml dynamically
+    - name: Generate prometheus.yml dynamically (Linux + Windows targets)
       template:
-        src: /home/ubuntu/portable_monitoring_agent/monitoring-deploy/files/prometheus.yml.j2
+        src: ~/portable_monitoring_agent/monitoring-deploy/files/prometheus.yml.j2
         dest: /home/ubuntu/portable_monitoring_agent/prometheus.yml
-
+      vars:
+        monitor_ip: "{{ monitor_ip }}"
+        worker_ips: "{{ worker_ips }}"
+        windows_ips: "{{ windows_ips }}"
 
     - name: Build Docker image for monitoring agent
       command: docker build -t monitoring-agent-kasi .

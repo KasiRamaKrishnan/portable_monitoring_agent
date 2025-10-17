@@ -9,7 +9,14 @@ scrape_configs:
 
   - job_name: 'worker_nodes'
     static_configs:
+      {% for ip in worker_ips %}
       - targets:
-{% for ip in worker_ips %}
           - '{{ ip }}:9100'
-{% endfor %}
+      {% endfor %}
+
+  - job_name: 'windows_nodes'
+    static_configs:
+      {% for ip in windows_ips %}
+      - targets:
+          - '{{ ip }}:9182'
+      {% endfor %}

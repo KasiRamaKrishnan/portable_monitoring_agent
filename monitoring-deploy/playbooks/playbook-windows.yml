@@ -1,0 +1,90 @@
+---
+- name: Setup Windows monitoring agents (Windows Exporter + Promtail)
+  hosts: windows
+  gather_facts: no
+
+  vars:
+    promtail_version: "2.9.4"
+    win_exporter_version: "0.25.1"
+    promtail_dir: "C:\\Promtail"
+    win_exporter_dir: "C:\\WindowsExporter"
+    loki_url: "http://{{ monitor_node_ip }}:3100/loki/api/v1/push"
+
+  tasks:
+    - name: Ensure PowerShell execution policy allows scripts
+      win_shell: Set-ExecutionPolicy RemoteSigned -Force
+
+    - name: Create directories for Promtail and Windows Exporter
+      win_file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ promtail_dir }}"
+        - "{{ win_exporter_dir }}"
+
+    - name: Download Windows Exporter zip
+      win_get_url:
+        url: "https://github.com/prometheus-community/windows_exporter/releases/download/v{{ win_exporter_version }}/windows_exporter-{{ win_exporter_version }}-amd64.msi"
+        dest: "{{ win_exporter_dir }}\\windows_exporter.msi"
+
+    - name: Install Windows Exporter
+      win_package:
+        path: "{{ win_exporter_dir }}\\windows_exporter.msi"
+        state: present
+        arguments: 'ENABLECOLLECTORS="cpu,cs,logical_disk,net,os,service,system,textfile"'
+
+    - name: Ensure Windows Exporter service is running
+      win_service:
+        name: windows_exporter
+        start_mode: auto
+        state: started
+
+    - name: Download Promtail for Windows
+      win_get_url:
+        url: "https://github.com/grafana/loki/releases/download/v{{ promtail_version }}/promtail-windows-amd64.zip"
+        dest: "{{ promtail_dir }}\\promtail.zip"
+
+    - name: Extract Promtail zip
+      win_unzip:
+        src: "{{ promtail_dir }}\\promtail.zip"
+        dest: "{{ promtail_dir }}"
+        overwrite: yes
+
+    - name: Create Promtail config file
+      win_copy:
+        dest: "{{ promtail_dir }}\\promtail-config.yaml"
+        content: |
+          server:
+            http_listen_port: 9080
+            grpc_listen_port: 0
+
+          positions:
+            filename: C:\\Promtail\\positions.yaml
+
+          clients:
+            - url: "{{ loki_url }}"
+
+          scrape_configs:
+            - job_name: windows-logs
+              static_configs:
+                - targets:
+                    - localhost
+                  labels:
+                    job: windows
+                    hostname: "{{ ansible_hostname }}"
+                    __path__: C:\\ProgramData\\*.log
+
+    - name: Install Promtail as a Windows Service
+      win_shell: |
+        if (-not (Get-Service -Name promtail -ErrorAction SilentlyContinue)) {
+          New-Service -Name "promtail" `
+            -BinaryPathName "C:\\Promtail\\promtail-windows-amd64.exe --config.file=C:\\Promtail\\promtail-config.yaml" `
+            -DisplayName "Promtail" `
+            -StartupType Automatic
+        }
+
+    - name: Ensure Promtail service is running
+      win_service:
+        name: promtail
+        start_mode: auto
+        state: started
