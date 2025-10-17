@@ -15,6 +15,5 @@ scrape_configs:
           - localhost
         labels:
           job: varlogs
-          hostname: ${HOSTNAME}   # hostname label
-        paths:
-          - /var/log/*.log
+          hostname: promtail-node  # or fixed hostname; ${HOSTNAME} expansion may not work
+        __path__: /var/log/*.log
