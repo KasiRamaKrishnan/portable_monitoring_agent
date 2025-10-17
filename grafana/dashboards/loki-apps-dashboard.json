@@ -158,7 +158,7 @@
             "uid": "P8E80F9AEF21F6940"
           },
           "editorMode": "code",
-          "expr": "{hostname=\"$hostname\"} |= ``",
+          "expr": "{hostname=\"$hostname\"} |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -171,23 +171,19 @@
   "refresh": false,
   "schemaVersion": 39,
   "tags": [],
+  "folderUid": "loki", 
   "templating": {
     "list": [
       {
         "current": {
-          "selected": true,
-          "text": [
-            "ip-172-31-11-198"
-          ],
-          "value": [
-            "ip-172-31-11-198"
-          ]
+          "text": "All",
+          "value": "$__all"
         },
         "datasource": {
           "type": "loki",
           "uid": "P8E80F9AEF21F6940"
         },
-        "definition": "",
+        "definition": "label_values({job=~\".*\"}, hostname)",
         "hide": 0,
         "includeAll": true,
         "label": "Host",
@@ -227,8 +223,8 @@
     ]
   },
   "timezone": "",
-  "title": "Loki Logs by Host Copy",
+  "title": "Loki Dashboard for logs",
   "uid": "cf1b0ag3f12wwf",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
