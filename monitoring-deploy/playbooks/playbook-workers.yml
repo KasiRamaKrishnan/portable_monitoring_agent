@@ -1,9 +1,6 @@
 - name: Setup Node Exporter and Promtail on worker nodes
   hosts: workers
   become: yes
-  vars:
-    monitor_node_ip: "13.201.98.75"  # internal IP of monitor node
-    ssh_key_path: "~/sree.pem"  # absolute path to your private key
 
   tasks:
     - name: Update apt cache
@@ -47,6 +44,14 @@
           - "--path.sysfs=/host/sys"
           - "--path.rootfs=/rootfs"
 
+    - name: Create Promtail data directory
+      file:
+        path: /var/lib/promtail
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
     - name: Copy Promtail config to host
       template:
         src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml
@@ -60,8 +65,9 @@
         name: promtail
         image: grafana/promtail:2.9.4
         volumes:
-          - /var/log:/var/log
+          - /var/log:/var/log               # log files
           - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
+          - /var/lib/promtail:/var/lib/promtail   # positions file directory
         env:
           MONITOR_IP: "{{ monitor_node_ip }}"
         command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
