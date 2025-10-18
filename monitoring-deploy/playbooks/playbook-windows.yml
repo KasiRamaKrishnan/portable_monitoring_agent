@@ -1,5 +1,5 @@
 ---
-- name: Setup Windows monitoring agents (Docker + Windows Exporter + Promtail)
+- name: Setup Windows monitoring agents (Docker Engine + Windows Exporter + Promtail)
   hosts: windows
   gather_facts: yes
   become: no
@@ -21,16 +21,30 @@
         src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config-windows.yaml.j2
         dest: "{{ promtail_config_file }}"
 
-    - name: Install Docker using Chocolatey
-      win_chocolatey:
-        name: docker-desktop
+    - name: Ensure Docker service is installed (Docker Engine)
+      win_feature:
+        name: Containers
         state: present
 
-    - name: Start Docker service
+    - name: Ensure Docker service is installed (if Docker Engine MSI is used)
+      win_chocolatey:
+        name: docker
+        state: present
+      ignore_errors: yes
+
+    - name: Ensure Docker service is running
       win_service:
-        name: com.docker.service
+        name: docker
         start_mode: auto
         state: started
+
+    - name: Wait until Docker daemon is ready
+      win_shell: |
+        $max=30
+        $i=0
+        do {
+          try { docker info; break } catch {}; Start-Sleep -Seconds 2; $i++
+        } while ($i -lt $max)
 
     - name: Ensure old Windows Exporter container is removed (if exists)
       win_shell: |
