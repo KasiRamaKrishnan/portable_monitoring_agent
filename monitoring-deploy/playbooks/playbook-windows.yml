@@ -1,14 +1,17 @@
-- name: Setup Windows monitoring agents (Promtail + Windows Exporter in containers)
+- name: Setup Windows monitoring agents (Docker + Promtail + Windows Exporter)
   hosts: windows
-  gather_facts: yes
+  gather_facts: no
   become: no
 
   vars:
-    monitor_ip: "{{ hostvars[groups['monitor'][0]]['ansible_host'] }}"
     promtail_config_dir: "C:\\Promtail"
     promtail_config_file: "{{ promtail_config_dir }}\\promtail-config.yaml"
+    monitor_ip: "{{ hostvars[groups['monitor'][0]]['ansible_host'] }}"
 
   tasks:
+    - name: Ensure PowerShell execution policy allows scripts
+      win_shell: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force
+
     - name: Ensure Promtail directory exists
       win_file:
         path: "{{ promtail_config_dir }}"
@@ -19,17 +22,31 @@
         src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config-windows.yaml.j2
         dest: "{{ promtail_config_file }}"
 
-    - name: Ensure old Promtail container is removed (if exists)
+    - name: Install DockerMsftProvider
       win_shell: |
-        if (docker ps -a --format "{{'{{.Names}}'}}" | findstr /I "promtail") {
-          docker rm -f promtail
-        }
-      ignore_errors: yes
+        Install-Module -Name DockerMsftProvider -Repository PSGallery -Force
 
-    - name: Ensure old Windows Exporter container is removed (if exists)
+    - name: Install Docker on Windows
+      win_shell: |
+        Install-Package -Name docker -ProviderName DockerMsftProvider -Force
+
+    - name: Start Docker service
+      win_service:
+        name: docker
+        start_mode: auto
+        state: started
+
+    - name: Ensure old Windows Exporter container is removed
       win_shell: |
         if (docker ps -a --format "{{'{{.Names}}'}}" | findstr /I "windows_exporter") {
           docker rm -f windows_exporter
+        }
+      ignore_errors: yes
+
+    - name: Ensure old Promtail container is removed
+      win_shell: |
+        if (docker ps -a --format "{{'{{.Names}}'}}" | findstr /I "promtail") {
+          docker rm -f promtail
         }
       ignore_errors: yes
 
@@ -48,10 +65,10 @@
           grafana/promtail:2.9.4 `
           -config.file=C:\Promtail\promtail-config.yaml -config.expand-env=true
 
-    - name: Verify running containers
+    - name: Display running containers
       win_shell: docker ps
       register: docker_status
 
-    - name: Display running containers
+    - name: Show container status
       debug:
         var: docker_status.stdout_lines
