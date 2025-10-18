@@ -16,7 +16,7 @@
 
     - name: Create Promtail configuration file from template
       win_template:
-        src: ../templates/promtail-config-windows.yaml.j2
+        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config-windows.yaml.j2
         dest: "{{ promtail_config_file }}"
 
     - name: Ensure old Promtail container is removed (if exists)
