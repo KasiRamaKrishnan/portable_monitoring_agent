@@ -1,4 +1,5 @@
-- name: Setup Windows monitoring agents (Promtail + Windows Exporter in containers)
+---
+- name: Setup Windows monitoring agents (Docker + Windows Exporter + Promtail)
   hosts: windows
   gather_facts: yes
   become: no
@@ -9,26 +10,27 @@
     promtail_config_file: "{{ promtail_config_dir }}\\promtail-config.yaml"
 
   tasks:
+
     - name: Ensure Promtail directory exists
       win_file:
         path: "{{ promtail_config_dir }}"
         state: directory
-
-    - name: Ensure PowerShell execution policy allows scripts
-      win_shell: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force
-      ignore_errors: yes
 
     - name: Create Promtail configuration file from template
       win_template:
         src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config-windows.yaml.j2
         dest: "{{ promtail_config_file }}"
 
-    - name: Ensure old Promtail container is removed (if exists)
-      win_shell: |
-        if (docker ps -a --format "{{'{{.Names}}'}}" | findstr /I "promtail") {
-          docker rm -f promtail
-        }
-      ignore_errors: yes
+    - name: Install Docker using Chocolatey
+      win_chocolatey:
+        name: docker-desktop
+        state: present
+
+    - name: Start Docker service
+      win_service:
+        name: com.docker.service
+        start_mode: auto
+        state: started
 
     - name: Ensure old Windows Exporter container is removed (if exists)
       win_shell: |
@@ -43,6 +45,13 @@
           -p 9182:9182 `
           prom/windows-exporter:latest `
           --collectors.enabled "cpu,cs,logical_disk,net,os,system"
+
+    - name: Ensure old Promtail container is removed (if exists)
+      win_shell: |
+        if (docker ps -a --format "{{'{{.Names}}'}}" | findstr /I "promtail") {
+          docker rm -f promtail
+        }
+      ignore_errors: yes
 
     - name: Run Promtail container
       win_shell: |
