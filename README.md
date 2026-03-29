@@ -1,1059 +1,589 @@
-# 🔍 Monitoring Agent Deployment with Ansible (Prometheus + Grafana + Loki + Node Exporter + Promtail)
+# Portable Monitoring Agent
 
-This project automates the deployment of a full monitoring stack using **Ansible**, targeting:
+A self-hosted, multi-platform observability framework that monitors **Linux servers**, **Windows servers**, and **Kubernetes clusters** from a single central stack.
 
-- One **Monitoring Node** (Prometheus + Grafana + Loki + Node Exporter + Promtail)
-- Multiple **Worker Nodes** (Node Exporter + Promtail)
-
----
-
-## 📦 Stack Components
-
-| Component     | Role                                |
-|---------------|-------------------------------------|
-| Prometheus    | Metrics collection                  |
-| Grafana       | Metrics & logs visualization        |
-| Loki          | Log aggregation                     |
-| Node Exporter | Export Linux system metrics         |
-| Promtail      | Forward logs to Loki                |
+Built on the modern Grafana open-source stack. One agent — **Grafana Alloy** — replaces Node Exporter + Windows Exporter + Promtail across all platforms.
 
 ---
 
-## 🛠️ Prerequisites
+## Stack Components
 
-- Ansible installed on the **control host** (can be your laptop or the monitoring node itself)
-- SSH access from control host to all target VMs
-- SSH private key available and referenced in inventory
-- Docker installed automatically via playbooks
-- Git installed on control host
-- All VMs are Ubuntu-based
-
----
-
-## 📁 Directory Structure
-
-```bash
-monitoring-deploy/
-├── inventory.ini
-├── playbooks/
-│   ├── playbook-monitor.yml
-│   └── playbook-workers.yml
-├── files/
-│   └── promtail-config.yaml
-
-
-# 📊 Complete Monitoring Stack Documentation
-
-> **Automated deployment of Prometheus, Grafana, Loki monitoring stack using Ansible**
-
-## Table of Contents
-1. [🚀 Quick Start](#-quick-start)
-2. [🏗️ Architecture Overview](#️-architecture-overview)
-3. [🔧 Component Details](#-component-details)
-4. [📋 Prerequisites](#-prerequisites)
-5. [⚙️ Installation Guide](#️-installation-guide)
-6. [🔨 Configuration](#-configuration)
-7. [📊 Monitoring and Dashboards](#-monitoring-and-dashboards)
-8. [🔍 Troubleshooting](#-troubleshooting)
-9. [🛠️ Maintenance](#️-maintenance)
-10. [🔒 Security Considerations](#-security-considerations)
-
-## 🚀 Quick Start
-
-### Prerequisites Checklist
-- [ ] Ubuntu 18.04+ on all nodes
-- [ ] SSH access to all nodes  
-- [ ] Ansible installed on control host
-- [ ] Network connectivity between nodes
-
-### 3-Step Deployment
-```bash
-# Step 1: Clone and setup
-git clone https://github.com/KasiRamaKrishnan/portable_monitoring_agent.git
-cd portable_monitoring_agent/monitoring-deploy
-
-# Step 2: Configure inventory.ini with your node IPs and SSH keys
-ansible all -i inventory.ini -m ping  # Test connectivity
-
-# Step 3: Deploy
-ansible-playbook -i inventory.ini playbooks/playbook-workers.yml --ask-become-pass   # Worker nodes
-ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml --ask-become-pass   # Monitoring node
-```
-
-### Post-Deployment Access
-- **Grafana**: `http://monitoring-node-ip:3000` (admin/admin)
-- **Prometheus**: `http://monitoring-node-ip:9090`
+| Component | Role | Port |
+|-----------|------|------|
+| **Grafana Alloy** | Unified agent — collects metrics AND logs on every node | 12345 (UI) |
+| **Prometheus** | Metrics storage — receives pushes from all Alloy agents | 9090 |
+| **Loki** | Log storage — receives log pushes from all Alloy agents | 3100 |
+| **Grafana** | Dashboards and visualization | 3000 |
+| **Alertmanager** | Alert routing (Slack, email, PagerDuty, etc.) | 9093 |
+| **kube-state-metrics** | Kubernetes object metrics (deployments, pods, nodes) | 8080 |
 
 ---
 
-## 🏗️ Architecture Overview
+## How It Works
 
-This monitoring solution implements a distributed observability stack using modern open-source tools. The architecture follows a hub-and-spoke model where the monitoring node acts as the central collection and visualization point.
-
-**Key Components:**
-- **Monitoring Node**: Central hub running Prometheus, Grafana, Loki, Node Exporter, and Promtail
-- **Worker Nodes**: Distributed agents running Node Exporter and Promtail
-
-### High-Level Architecture
-
+### Old approach (3 agents per platform)
 ```
-                    ╔═══════════════════════════════════════════════════════════════╗
-                    ║                    MONITORING NODE                           ║
-                    ║  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        ║
-                    ║  │ Prometheus  │  │   Grafana   │  │    Loki     │        ║
-                    ║  │   :9090     │  │    :3000    │  │   :3100     │        ║
-                    ║  └─────────────┘  └─────────────┘  └─────────────┘        ║
-                    ║  ┌─────────────┐  ┌─────────────┐                         ║
-                    ║  │Node Exporter│  │  Promtail   │                         ║
-                    ║  │   :9100     │  │   :9080     │                         ║
-                    ║  └─────────────┘  └─────────────┘                         ║
-                    ╚═══════════════════════════════════════════════════════════════╝
-                                            │
-                                            │ Scrapes metrics & collects logs
-                                            ▼
-                    ╔═══════════════════════════════════════════════════════════════╗
-                    ║                    WORKER NODES                              ║
-                    ║  ┌─────────────┐  ┌─────────────┐                          ║
-                    ║  │Node Exporter│  │  Promtail   │                          ║
-                    ║  │   :9100     │  │   :9080     │                          ║
-                    ║  └─────────────┘  └─────────────┘                          ║
-                    ╚═══════════════════════════════════════════════════════════════╝
-```
-![image](https://github.com/user-attachments/assets/b7d5b25c-7f59-4373-a139-f852fc4ea59d)
-
-### Data Flow
-
-```
-📊 METRICS FLOW
-Node Exporter (All Nodes) → Prometheus (Monitoring Node) → Grafana (Visualization)
-
-📝 LOGS FLOW  
-Promtail (All Nodes) → Loki (Monitoring Node) → Grafana (Visualization)
+Linux   → Node Exporter + Promtail
+Windows → Windows Exporter + Promtail
+K8s     → Node Exporter DaemonSet + Promtail DaemonSet + kube-state-metrics
 ```
 
-**Process:**
-1. **Metrics Collection**: Node Exporter on all nodes exposes system metrics
-2. **Metrics Aggregation**: Prometheus scrapes metrics from all Node Exporters  
-3. **Log Collection**: Promtail on all nodes tails log files and forwards to Loki
-4. **Log Aggregation**: Loki receives and indexes logs from all Promtail instances
-5. **Visualization**: Grafana queries both Prometheus and Loki for unified dashboards
+### This framework (1 agent everywhere)
+```
+Linux   ──┐
+Windows ──┼──→  Grafana Alloy  →  pushes metrics → Prometheus
+K8s     ──┘                    →  pushes logs    → Loki
+                                                 → Grafana (dashboards)
+                                                 → Alertmanager (alerts)
+```
 
-## 🔧 Component Details
+### Why push instead of pull?
+The old approach required Prometheus to know every worker's IP address and scrape them. With Grafana Alloy's **push model (remote_write)**:
+- Workers push to the monitor server — Prometheus needs no IP list
+- Firewall-friendly — only outbound connections from workers
+- Adding a new node requires no Prometheus config change
 
-### Monitoring Node Components
+---
 
-#### Prometheus (Port 9090)
-- **Purpose**: Time-series metrics database and monitoring system
-- **Responsibilities**:
-  - Scrapes metrics from Node Exporters across all nodes
-  - Stores time-series data with automatic retention policies
-  - Provides PromQL query language for metrics analysis
-  - Handles alerting rules and notifications
-- **Data Storage**: Local filesystem with configurable retention
-- **Key Features**: Service discovery, rule evaluation, alert management
+## Architecture
 
-#### Grafana (Port 3000)
-- **Purpose**: Visualization and analytics platform
-- **Responsibilities**:
-  - Creates dashboards for metrics and logs
-  - Provides alerting and notification capabilities
-  - User management and access control
-  - Data source management (Prometheus + Loki)
-- **Default Access**: admin/admin (change immediately)
-- **Key Features**: Rich visualization, templating, annotations
+```
+┌──────────────────────────────────────────────────────────┐
+│                    MONITOR SERVER                        │
+│   docker-compose — each service in its own container     │
+│                                                          │
+│  ┌────────────┐  ┌──────┐  ┌─────────┐  ┌───────────┐  │
+│  │ Prometheus │  │ Loki │  │ Grafana │  │Alertmanager│  │
+│  │   :9090    │  │:3100 │  │  :3000  │  │   :9093   │  │
+│  └────────────┘  └──────┘  └─────────┘  └───────────┘  │
+└──────────────────────────────────────────────────────────┘
+          ▲ remote_write (metrics)    ▲ push (logs)
+          │                          │
+┌─────────┴──────────────────────────┴──────────────────┐
+│               GRAFANA ALLOY  (on every node)          │
+│  • Linux systemd service                              │
+│  • Windows service                                    │
+│  • Kubernetes DaemonSet                               │
+│                                                       │
+│  Collects:  System metrics + Logs + K8s Events        │
+└───────────────────────────────────────────────────────┘
+```
 
-#### Loki (Port 3100)
-- **Purpose**: Log aggregation system inspired by Prometheus
-- **Responsibilities**:
-  - Receives log streams from Promtail instances
-  - Indexes logs using labels (not full-text)
-  - Provides LogQL query language
-  - Efficient log storage and retrieval
-- **Storage**: Local filesystem with configurable retention
-- **Key Features**: Label-based indexing, efficient compression
+![Architecture diagram](https://github.com/user-attachments/assets/b7d5b25c-7f59-4373-a139-f852fc4ea59d)
 
-#### Node Exporter (Port 9100)
-- **Purpose**: Hardware and OS metrics exporter for Unix systems
-- **Responsibilities**:
-  - Exposes CPU, memory, disk, network metrics
-  - Provides filesystem and process statistics
-  - Hardware sensor data collection
-- **Metrics Format**: Prometheus exposition format
-- **Update Frequency**: Real-time metric exposure
+---
 
-#### Promtail (Port 9080)
-- **Purpose**: Log shipping agent for Loki
-- **Responsibilities**:
-  - Tails log files (syslog, application logs)
-  - Adds labels and metadata to log entries
-  - Forwards structured logs to Loki
-  - Handles log parsing and filtering
-- **Configuration**: YAML-based with discovery capabilities
+## Directory Structure
 
-### Worker Node Components
+```
+portable_monitoring_agent/
+├── versions.env                          # Single source of truth for all component versions
+├── docker-compose.yml                    # Monitor server — 4 independent containers
+├── install.sh                            # Unified installer (all platforms)
+│
+├── config/                               # Monitor server configuration
+│   ├── prometheus/
+│   │   ├── prometheus.yml                # Push model — no worker IPs needed
+│   │   └── alerts.yml                    # Alert rules: Linux, Windows, Kubernetes
+│   ├── loki/
+│   │   └── loki-config.yaml             # Persistent storage, TSDB v13, 30-day retention
+│   └── alertmanager/
+│       └── alertmanager.yml             # Notification channels (Slack, email, PagerDuty)
+│
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/datasources.yaml  # Prometheus + Loki + Alertmanager auto-wired
+│   │   └── dashboards/dashboards.yml
+│   └── dashboards/
+│       ├── node-exporter.json            # Linux system metrics dashboard
+│       ├── windows-exporter.json         # Windows system metrics dashboard
+│       ├── kubernetes.json               # Kubernetes cluster overview dashboard
+│       └── loki-apps-dashboard.json      # Log analysis dashboard
+│
+├── monitoring-deploy/                    # Ansible — deploys Alloy on nodes
+│   ├── inventory.ini                     # Host list: Linux workers + Windows workers
+│   ├── group_vars/all.yml
+│   ├── playbooks/
+│   │   ├── playbook-monitor.yml          # Deploys monitor server via docker-compose
+│   │   ├── playbook-linux.yml            # Installs Alloy on Linux (systemd service)
+│   │   └── playbook-windows.yml          # Installs Alloy on Windows (Windows service)
+│   └── files/
+│       ├── alloy-linux.alloy.j2          # Alloy config for Linux nodes
+│       └── alloy-windows.alloy.j2        # Alloy config for Windows nodes
+│
+└── kubernetes/                           # Kubernetes manifests
+    ├── namespace.yaml
+    ├── deploy.sh                         # deploy / destroy / status
+    ├── alloy/                            # Alloy DaemonSet (replaces node-exporter + promtail)
+    ├── prometheus/                       # Prometheus with remote_write receiver enabled
+    ├── loki/                             # Loki with persistent storage
+    ├── grafana/                          # Grafana with pre-wired datasources
+    ├── alertmanager/                     # Alertmanager
+    └── kube-state-metrics/               # Kubernetes object metrics
+```
 
-#### Node Exporter (Port 9100)
-- Same functionality as monitoring node
-- Configured to be scraped by central Prometheus
-- Exposes worker node system metrics
-
-#### Promtail (Port 9080)
-- Same functionality as monitoring node
-- Configured to forward logs to central Loki
-- Tails worker node specific logs
+---
 
 ## Prerequisites
 
-### System Requirements
+### Monitor Server
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| OS | Ubuntu 20.04+ | Ubuntu 22.04 |
+| CPU | 2 cores | 4 cores |
+| RAM | 4 GB | 8 GB |
+| Disk | 50 GB | 100 GB SSD |
 
-#### Monitoring Node
-- **OS**: Ubuntu 18.04+ (recommended: Ubuntu 20.04/22.04)
-- **CPU**: Minimum 2 cores, Recommended 4+ cores
-- **RAM**: Minimum 4GB, Recommended 8GB+
-- **Storage**: Minimum 50GB, Recommended 100GB+ SSD
-- **Network**: Stable internet connection, open ports for services
+### Linux Worker Nodes
+- Ubuntu 18.04+ or any systemd-based Linux
+- SSH access from Ansible control host
+- Outbound HTTP access to monitor server (port 9090, 3100)
 
-#### Worker Nodes
-- **OS**: Ubuntu 18.04+ (recommended: Ubuntu 20.04/22.04)
-- **CPU**: Minimum 1 core
-- **RAM**: Minimum 1GB, Recommended 2GB+
-- **Storage**: Minimum 10GB free space
-- **Network**: Network connectivity to monitoring node
+### Windows Worker Nodes
+- Windows Server 2016+ or Windows 10+
+- WinRM enabled (run `Enable-PSRemoting` as Administrator)
+- Outbound HTTP access to monitor server (port 9090, 3100)
 
-### Software Prerequisites
+### Kubernetes
+- kubectl configured with cluster access
+- Cluster version 1.19+
 
-#### Control Host (Ansible Controller)
-```bash
-# Install Ansible
-sudo apt update
-sudo apt install ansible python3-pip git -y
+### Control Host (where you run Ansible)
+- Ansible installed
+- Python 3.6+
+- `pywinrm` for Windows deployments (`pip install pywinrm`)
 
-# Verify installation
-ansible --version
-```
+---
 
-#### All Target Nodes
-- SSH server running and accessible
-- User account with sudo privileges
-- Python3 installed (usually pre-installed on Ubuntu)
+## Quick Start
 
-### Network Requirements
+### Option A — Deploy everything
 
-#### Required Open Ports
-
-| Node Type | Port | Service | Description |
-|-----------|------|---------|-------------|
-| **Monitoring Node** | 22 | SSH | Remote access |
-| | 3000 | Grafana | Web UI |
-| | 9090 | Prometheus | Web UI & API |
-| | 9100 | Node Exporter | Metrics endpoint |
-| | 3100 | Loki | Log ingestion API |
-| | 9080 | Promtail | Metrics endpoint |
-| **Worker Nodes** | 22 | SSH | Remote access |
-| | 9100 | Node Exporter | Metrics endpoint |
-| | 9080 | Promtail | Metrics endpoint |
-
-#### Firewall Configuration Example
-```bash
-# On monitoring node
-sudo ufw allow 22/tcp
-sudo ufw allow 3000/tcp
-sudo ufw allow 9090/tcp
-sudo ufw allow 9100/tcp
-sudo ufw allow 3100/tcp
-sudo ufw allow 9080/tcp
-sudo ufw enable
-
-# On worker nodes
-sudo ufw allow 22/tcp
-sudo ufw allow 9100/tcp
-sudo ufw allow 9080/tcp  
-sudo ufw enable
-```
-
-## Installation Guide
-
-### Step 1: Clone Repository
 ```bash
 git clone https://github.com/KasiRamaKrishnan/portable_monitoring_agent.git
-cd portable_monitoring_agent/monitoring-deploy
+cd portable_monitoring_agent
+
+# Edit inventory with your server IPs and SSH key
+vim monitoring-deploy/inventory.ini
+
+# Deploy all platforms
+./install.sh --all
 ```
 
-### Step 2: Configure Inventory
+### Option B — Deploy selectively
 
-Create and edit `inventory.ini`:
-
-```ini
-[monitoring_nodes]
-monitoring-server ansible_host=192.168.1.100 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
-
-[worker_nodes]
-worker-1 ansible_host=192.168.1.101 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
-worker-2 ansible_host=192.168.1.102 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
-worker-3 ansible_host=192.168.1.103 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
-
-[all:vars]
-ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-monitoring_node_ip=192.168.1.100
-```
-
-> **📝 Note**: Replace IP addresses and SSH key paths with your actual values
-
-### Step 3: Verify Connectivity
 ```bash
-# Test SSH connectivity to all nodes
-ansible all -i inventory.ini -m ping
-
-# Expected output: SUCCESS for all nodes
+./install.sh --monitor      # Monitor server only (Prometheus + Loki + Grafana + Alertmanager)
+./install.sh --linux        # Grafana Alloy on Linux workers
+./install.sh --windows      # Grafana Alloy on Windows workers
+./install.sh --kubernetes   # Full stack on Kubernetes
 ```
 
-### Step 4: Deploy Worker Nodes
-```bash
-# Deploy monitoring agents on worker nodes
-ansible-playbook -i inventory.ini playbooks/playbook-workers.yml
+### Access the monitoring stack
 
-# This installs: Docker, Node Exporter, Promtail
-```
+| Service | URL | Default Login |
+|---------|-----|---------------|
+| **Grafana** | `http://<monitor-ip>:3000` | admin / admin |
+| **Prometheus** | `http://<monitor-ip>:9090` | — |
+| **Alertmanager** | `http://<monitor-ip>:9093` | — |
+| **Alloy UI** | `http://<any-node-ip>:12345` | — |
 
-### Step 5: Deploy Monitoring Node
-```bash
-# Deploy complete monitoring stack on monitoring node
-ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml
+> Change the Grafana password after first login.
 
-# Monitor deployment progress
-# This installs: Docker, Prometheus, Grafana, Loki, Node Exporter, Promtail
-```
+---
 
 ## Configuration
 
-### Prometheus Configuration
+### Step 1 — Set your server IPs
 
-The Prometheus configuration automatically includes:
+Edit `monitoring-deploy/inventory.ini`:
 
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+```ini
+[monitor]
+monitor_node ansible_host=<YOUR_MONITOR_IP> ansible_user=ubuntu
 
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
+[workers]
+worker1 ansible_host=<LINUX_WORKER_IP_1> ansible_user=ubuntu
+worker2 ansible_host=<LINUX_WORKER_IP_2> ansible_user=ubuntu
 
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: 
-          - 'localhost:9100'  # monitoring node
-          - '192.168.1.101:9100'  # worker-1
-          - '192.168.1.102:9100'  # worker-2
-          - '192.168.1.103:9100'  # worker-3
+[windows_workers]
+win1 ansible_host=<WINDOWS_WORKER_IP>
+# win2 ansible_host=<WINDOWS_WORKER_IP_2>
+
+[windows_workers:vars]
+ansible_connection=winrm
+ansible_winrm_transport=ntlm
+ansible_winrm_server_cert_validation=ignore
+ansible_user=Administrator
+# ansible_password=<password>  — use ansible-vault, not plain text
+
+[all:vars]
+ansible_ssh_private_key_file=~/your-key.pem
+monitor_node_ip=<YOUR_MONITOR_IP>
 ```
 
-### Loki Configuration
+### Step 2 — Pin component versions
 
-Default Loki configuration:
-```yaml
-auth_enabled: false
-
-server:
-  http_listen_port: 3100
-
-ingester:
-  lifecycler:
-    address: 127.0.0.1
-    ring:
-      kvstore:
-        store: inmemory
-      replication_factor: 1
-
-schema_config:
-  configs:
-    - from: 2020-10-24
-      store: boltdb-shipper
-      object_store: filesystem
-      schema: v11
-      index:
-        prefix: index_
-        period: 24h
-
-storage_config:
-  boltdb_shipper:
-    active_index_directory: /loki/boltdb-shipper-active
-    cache_location: /loki/boltdb-shipper-cache
-    shared_store: filesystem
-  filesystem:
-    directory: /loki/chunks
-
-limits_config:
-  enforce_metric_name: false
-  reject_old_samples: true
-  reject_old_samples_max_age: 168h
-```
-
-### Promtail Configuration
-
-Promtail configuration for log collection:
-```yaml
-server:
-  http_listen_port: 9080
-  grpc_listen_port: 0
-
-positions:
-  filename: /tmp/positions.yaml
-
-clients:
-  - url: http://192.168.1.100:3100/loki/api/v1/push
-
-scrape_configs:
-  - job_name: system
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: varlogs
-          __path__: /var/log/*log
-
-  - job_name: syslog
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: syslog
-          __path__: /var/log/syslog
-```
-
-### Docker Compose Services
-
-The monitoring node runs services via Docker Compose:
-
-```yaml
-version: '3.8'
-
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-
-  loki:
-    image: grafana/loki:latest
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./loki-config.yaml:/etc/loki/local-config.yaml
-      - loki_data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.ignored-mount-points'
-      - '^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'
-
-  promtail:
-    image: grafana/promtail:latest
-    ports:
-      - "9080:9080"
-    volumes:
-      - /var/log:/var/log:ro
-      - ./promtail-config.yaml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
-
-volumes:
-  prometheus_data:
-  grafana_data:
-  loki_data:
-```
-
-### Quick Deployment Commands
+All versions are managed in one file — `versions.env`:
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/KasiRamaKrishnan/portable_monitoring_agent.git
-cd portable_monitoring_agent/monitoring-deploy
-
-# 2. Configure inventory (edit with your IPs and SSH keys)
-vim inventory.ini
-
-# 3. Test connectivity
-ansible all -i inventory.ini -m ping
-
-# 4. Deploy monitoring node
-ansible-playbook -i inventory.ini playbooks/playbook-monitor.yml --ask-become-pass
-
-# 5. Deploy worker nodes  
-ansible-playbook -i inventory.ini playbooks/playbook-workers.yml --ask-become-pass
-
-# 6. Access Grafana
-# http://your-monitoring-node-ip:3000 (admin/admin)
+ALLOY_VERSION=1.3.1
+PROMETHEUS_VERSION=2.52.0
+LOKI_VERSION=2.9.4
+ALERTMANAGER_VERSION=0.27.0
+GRAFANA_VERSION=10.4.1
 ```
 
-> **✅ Deployment Status**: All services should be running after successful deployment
+To upgrade a component, change its version here and re-run the installer.
 
-### Manual Deployment Steps (Alternative)
+### Step 3 — Configure alerts (optional)
 
-If you prefer manual deployment:
+Edit `config/alertmanager/alertmanager.yml` to add your notification channel:
 
-#### On Monitoring Node:
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-
-# Create directories
-mkdir -p ~/monitoring/{prometheus,grafana,loki,promtail}
-cd ~/monitoring
-
-# Create docker-compose.yml (use configuration above)
-# Create configuration files
-# Start services
-docker-compose up -d
-```
-
-#### On Worker Nodes:
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# Start Node Exporter
-docker run -d \
-  --name node-exporter \
-  --restart unless-stopped \
-  -p 9100:9100 \
-  -v /proc:/host/proc:ro \
-  -v /sys:/host/sys:ro \
-  -v /:/rootfs:ro \
-  prom/node-exporter:latest \
-  --path.procfs=/host/proc \
-  --path.sysfs=/host/sys \
-  --collector.filesystem.ignored-mount-points='^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'
-
-# Start Promtail (create config first)
-docker run -d \
-  --name promtail \
-  --restart unless-stopped \
-  -p 9080:9080 \
-  -v /var/log:/var/log:ro \
-  -v /path/to/promtail-config.yaml:/etc/promtail/config.yml \
-  grafana/promtail:latest \
-  -config.file=/etc/promtail/config.yml
-```
-
-### Verification Steps
-
-After deployment, verify all services:
-
-```bash
-# Check service status on monitoring node
-docker ps
-docker-compose ps
-
-# Verify service endpoints
-curl http://localhost:9090  # Prometheus
-curl http://localhost:3000  # Grafana
-curl http://localhost:3100/ready  # Loki
-curl http://localhost:9100/metrics  # Node Exporter
-curl http://localhost:9080/metrics  # Promtail
-
-# Check worker nodes
-curl http://worker-ip:9100/metrics  # Node Exporter
-curl http://worker-ip:9080/metrics  # Promtail
-```
-
-## Monitoring and Dashboards
-
-### Accessing Services
-
-| Service | URL | Default Credentials | Purpose |
-|---------|-----|---------------------|---------|
-| **Grafana** | `http://monitoring-node-ip:3000` | admin/admin | Dashboards & Visualization |
-| **Prometheus** | `http://monitoring-node-ip:9090` | - | Metrics Query Interface |
-| **Node Exporter** | `http://any-node-ip:9100/metrics` | - | Raw Metrics Data |
-| **Promtail** | `http://any-node-ip:9080/metrics` | - | Promtail Metrics |
-
-> **⚠️ Security Warning**: Change Grafana's default password immediately after first login!
-
-### Setting Up Grafana
-
-#### Initial Configuration
-1. Login to Grafana (admin/admin)
-2. Change default password
-3. Add data sources:
-   - **Prometheus**: http://localhost:9090
-   - **Loki**: http://localhost:3100
-
-#### Essential Dashboards
-
-**System Overview Dashboard:**
-- CPU usage across all nodes
-- Memory utilization
-- Disk space and I/O
-- Network traffic
-- System load averages
-
-**Node Exporter Dashboard:**
-- Import Dashboard ID: 1860 (Node Exporter Full)
-- Configure data source as Prometheus
-- Customize for your environment
-
-**Log Dashboard:**
-- Create panels for log visualization
-- Use LogQL queries for log analysis
-- Set up log-based alerts
-
-#### Sample Prometheus Queries
-
-| Metric | Query | Description |
-|--------|-------|-------------|
-| **CPU Usage** | `100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)` | CPU usage percentage by node |
-| **Memory Usage** | `(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100` | Memory usage percentage |
-| **Disk Usage** | `100 - ((node_filesystem_avail_bytes * 100) / node_filesystem_size_bytes)` | Disk usage percentage |
-| **Network RX** | `rate(node_network_receive_bytes_total[5m]) * 8` | Network receive rate (bits/sec) |
-| **Network TX** | `rate(node_network_transmit_bytes_total[5m]) * 8` | Network transmit rate (bits/sec) |
-
-#### Sample LogQL Queries
-
-| Use Case | Query | Description |
-|----------|-------|-------------|
-| **All Logs** | `{job="varlogs"}` | All logs from varlogs job |
-| **Error Logs** | `{job="syslog"} \|= "error"` | Filter for error messages |
-| **SSH Failures** | `{job="syslog"} \|= "Failed password"` | Failed SSH login attempts |
-| **System Events** | `{job="syslog"} \|= "systemd"` | System service messages |
-
-### Alerting Configuration
-
-#### Prometheus Alert Rules
-
-Create `alert-rules.yml`:
 ```yaml
-groups:
-  - name: node-alerts
-    rules:
-      - alert: NodeDown
-        expr: up{job="node-exporter"} == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Node {{ $labels.instance }} is down"
-          description: "Node {{ $labels.instance }} has been down for more than 1 minute"
-
-      - alert: HighCPUUsage
-        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High CPU usage on {{ $labels.instance }}"
-          description: "CPU usage is above 80% for more than 5 minutes"
-
-      - alert: HighMemoryUsage
-        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "High memory usage on {{ $labels.instance }}"
-          description: "Memory usage is above 90% for more than 5 minutes"
-
-      - alert: DiskSpaceLow
-        expr: 100 - ((node_filesystem_avail_bytes * 100) / node_filesystem_size_bytes) > 85
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Low disk space on {{ $labels.instance }}"
-          description: "Disk usage is above 85% for more than 10 minutes"
+receivers:
+  - name: 'default'
+    slack_configs:
+      - channel: '#alerts'
+        api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        send_resolved: true
 ```
 
-#### Grafana Alerting
+Other supported channels: email, PagerDuty, OpsGenie, webhook.
 
-Configure notification channels:
-1. Go to Alerting → Notification channels
-2. Add channels (email, Slack, etc.)
-3. Create alert rules in dashboards
-4. Test notifications
+---
+
+## Platform Deployment Details
+
+### Linux Workers
+
+The Ansible playbook installs Grafana Alloy as a **systemd service** via the official Grafana apt repository.
+
+```bash
+ansible-playbook -i monitoring-deploy/inventory.ini \
+  monitoring-deploy/playbooks/playbook-linux.yml
+```
+
+**What Alloy collects on Linux:**
+- CPU, memory, disk I/O, filesystem, network, load average
+- `/var/log/syslog`, `/var/log/auth.log`, `/var/log/*.log`
+- systemd journal (all unit logs)
+
+**Verify deployment:**
+```bash
+# Check service status on any Linux worker
+ssh ubuntu@<worker-ip> systemctl status alloy
+
+# View Alloy's built-in UI
+curl http://<worker-ip>:12345/-/ready
+```
+
+---
+
+### Windows Workers
+
+The Ansible playbook installs Grafana Alloy as a **Windows service** via the official MSI installer over WinRM.
+
+```bash
+# Ensure pywinrm is installed on control host
+pip install pywinrm
+
+ansible-playbook -i monitoring-deploy/inventory.ini \
+  monitoring-deploy/playbooks/playbook-windows.yml
+```
+
+**What Alloy collects on Windows:**
+- CPU, memory, disk I/O, disk space, network, services, processes, OS stats
+- Windows Event Log: Application, System, Security (errors/warnings)
+
+**Enable WinRM on Windows nodes** (run once as Administrator):
+```powershell
+Enable-PSRemoting -Force
+Set-Item WSMan:\localhost\Service\Auth\Basic -Value $true
+Set-Item WSMan:\localhost\Service\AllowUnencrypted -Value $true
+```
+
+---
+
+### Kubernetes
+
+Deploys the full monitoring stack in a `monitoring` namespace. Grafana Alloy runs as a **DaemonSet** on every node.
+
+```bash
+./kubernetes/deploy.sh deploy    # Deploy full stack
+./kubernetes/deploy.sh status    # Check pod/service status
+./kubernetes/deploy.sh destroy   # Remove everything
+```
+
+**What the Alloy DaemonSet collects:**
+- Node metrics via kubelet (`/metrics`) and cAdvisor (`/metrics/cadvisor`)
+- kube-state-metrics (deployments, pods, nodes, replica sets)
+- All pod container logs (auto-discovered via Kubernetes SD)
+- Kubernetes Events as structured logs
+- Pods with `prometheus.io/scrape: "true"` annotation
+
+**Access services (local development):**
+```bash
+kubectl port-forward -n monitoring svc/grafana      3000:3000
+kubectl port-forward -n monitoring svc/prometheus   9090:9090
+kubectl port-forward -n monitoring svc/loki         3100:3100
+kubectl port-forward -n monitoring svc/alertmanager 9093:9093
+```
+
+Grafana is also exposed via **NodePort 30300**: `http://<node-ip>:30300`
+
+---
+
+## Open Ports Reference
+
+### Monitor Server
+| Port | Service | Who connects |
+|------|---------|-------------|
+| 22 | SSH | Ansible control host |
+| 3000 | Grafana | Browser |
+| 9090 | Prometheus | Browser + Alloy agents (remote_write) |
+| 3100 | Loki | Alloy agents (log push) |
+| 9093 | Alertmanager | Browser + Prometheus |
+
+### Linux / Windows Worker Nodes
+| Port | Service | Who connects |
+|------|---------|-------------|
+| 22 / 5985 | SSH / WinRM | Ansible control host |
+| 12345 | Alloy UI | Browser (optional, for debugging) |
+
+> Workers only need **outbound** connections to the monitor server on ports 9090 and 3100. No inbound scraping required.
+
+---
+
+## Dashboards
+
+Four pre-built Grafana dashboards are provisioned automatically:
+
+| Dashboard | Covers |
+|-----------|--------|
+| **Linux System Metrics** | CPU, memory, disk I/O, filesystem, network, uptime |
+| **Windows System Metrics** | CPU, memory, disk space, network, services, processes |
+| **Kubernetes Cluster Overview** | Nodes, pods, deployments, container CPU/memory, restarts, network |
+| **Loki Log Explorer** | Log search, volume over time, error rate |
+
+---
+
+## Alert Rules
+
+Pre-configured alert rules in `config/prometheus/alerts.yml`:
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| `InstanceDown` | Any target unreachable > 1 min | critical |
+| `AlloyAgentDown` | No agents reporting > 5 min | warning |
+| `HighCPUUsageLinux` | CPU > 90% for 5 min | warning |
+| `HighCPUUsageWindows` | CPU > 90% for 5 min | warning |
+| `HighMemoryUsageLinux` | Memory > 85% for 5 min | warning |
+| `HighMemoryUsageWindows` | Memory > 85% for 5 min | warning |
+| `DiskSpaceLowLinux` | Disk < 15% free for 5 min | warning |
+| `DiskSpaceLowWindows` | Disk < 15% free for 5 min | warning |
+| `DiskWillFillIn4Hours` | Disk fill rate projects full in 4h | critical |
+| `KubernetesPodCrashLooping` | > 5 restarts in 5 min | critical |
+| `KubernetesDeploymentReplicasMismatch` | Desired ≠ available replicas > 5 min | warning |
+| `KubernetesNodeNotReady` | Node not ready > 2 min | critical |
+| `KubernetesPodOOMKilled` | Container OOM killed | warning |
+
+---
+
+## Useful Queries
+
+### Prometheus (PromQL)
+
+```promql
+# CPU usage by node (Linux)
+100 - (avg by(hostname) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)
+
+# Memory usage % (Linux)
+(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+
+# Disk usage % (Linux)
+100 - ((node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100)
+
+# CPU usage (Windows)
+100 - (avg by(hostname) (rate(windows_cpu_time_total{mode="idle"}[2m])) * 100)
+
+# Pod restart rate (Kubernetes)
+rate(kube_pod_container_status_restarts_total[5m]) * 300
+
+# Top 5 CPU-consuming pods
+topk(5, sum by(pod, namespace) (rate(container_cpu_usage_seconds_total[2m])))
+```
+
+### Loki (LogQL)
+
+```logql
+# All logs from a specific host
+{hostname="worker1"}
+
+# Linux auth failures
+{job="auth"} |= "Failed password"
+
+# Windows Security events
+{log_type="security", platform="windows"}
+
+# Kubernetes pod errors in a namespace
+{namespace="production"} |= "error" | json | level="error"
+
+# Kubernetes events (warnings only)
+{job="kubernetes-events"} | json | type="Warning"
+
+# Log volume by platform over time
+sum by(platform) (rate({job=~".+"}[5m]))
+```
+
+---
 
 ## Troubleshooting
 
-### Common Issues and Solutions
-
-#### Services Not Starting
-
-**Problem**: Docker containers fail to start
-```bash
-# Check container logs
-docker logs prometheus
-docker logs grafana
-docker logs loki
-docker logs node-exporter
-docker logs promtail
-
-# Check Docker Compose status
-docker-compose ps
-docker-compose logs
-```
-
-**Solution**: 
-- Verify configuration files syntax
-- Check port conflicts
-- Ensure sufficient disk space
-- Verify file permissions
-
-#### Prometheus Not Scraping Targets
-
-**Problem**: Targets showing as DOWN in Prometheus
-```bash
-# Check Prometheus targets
-curl http://localhost:9090/api/v1/targets
-```
-
-**Solution**:
-- Verify network connectivity between nodes
-- Check firewall rules
-- Confirm Node Exporter is running on target nodes
-- Validate Prometheus configuration
-
-#### Grafana Data Source Issues
-
-**Problem**: Cannot connect to Prometheus/Loki
-**Solution**:
-- Verify data source URLs
-- Check service availability
-- Test connectivity from Grafana container
-- Review Grafana logs
-
-#### Loki Not Receiving Logs
-
-**Problem**: No logs appearing in Grafana
-```bash
-# Check Promtail logs
-docker logs promtail
-
-# Test Loki API
-curl http://localhost:3100/loki/api/v1/label
-```
-
-**Solution**:
-- Verify Promtail configuration
-- Check log file permissions
-- Confirm network connectivity to Loki
-- Validate log paths exist
-
-### Diagnostic Commands
+### Alloy agent is not sending data
 
 ```bash
-# System resource check
-df -h
-free -h
-top
-htop
+# Linux — check service status and logs
+systemctl status alloy
+journalctl -u alloy -f
 
-# Network connectivity
-telnet monitoring-node-ip 9090
-telnet monitoring-node-ip 3100
-netstat -tulpn | grep -E "(9090|3000|3100|9100|9080)"
+# Check if Alloy can reach the monitor server
+curl http://<monitor-ip>:9090/-/healthy
+curl http://<monitor-ip>:3100/ready
 
-# Docker troubleshooting
-docker system info
-docker system df
-docker stats
-
-# Log analysis
-journalctl -u docker
-tail -f /var/log/syslog
+# View Alloy's built-in debug UI
+# Shows pipeline components, errors, and metrics
+http://<node-ip>:12345
 ```
 
-### Log Locations
+### No metrics in Prometheus
 
 ```bash
-# Docker logs
-docker logs <container_name>
+# Verify remote_write receiver is enabled
+curl http://<monitor-ip>:9090/api/v1/status/flags | grep remote-write
 
-# System logs
-/var/log/syslog
-/var/log/docker.log
-
-# Application logs (if custom)
-~/monitoring/logs/
+# Check if data is arriving (query for any series)
+curl 'http://<monitor-ip>:9090/api/v1/query?query=up'
 ```
+
+### No logs in Loki / Grafana
+
+```bash
+# Check Loki is ready
+curl http://<monitor-ip>:3100/ready
+
+# Check labels available in Loki
+curl http://<monitor-ip>:3100/loki/api/v1/labels
+
+# docker-compose: check Loki container logs
+docker compose logs loki
+```
+
+### Monitor server containers
+
+```bash
+# View status of all containers
+docker compose ps
+
+# Tail logs for a specific service
+docker compose logs -f prometheus
+docker compose logs -f loki
+docker compose logs -f grafana
+docker compose logs -f alertmanager
+
+# Restart a single service without affecting others
+docker compose restart loki
+```
+
+### Kubernetes pods not starting
+
+```bash
+# Check pod status
+kubectl get pods -n monitoring
+
+# Describe a failing pod
+kubectl describe pod <pod-name> -n monitoring
+
+# View pod logs
+kubectl logs -n monitoring deployment/prometheus
+kubectl logs -n monitoring daemonset/alloy
+```
+
+---
 
 ## Maintenance
 
-### Regular Maintenance Tasks
+### Upgrading a component
 
-#### Daily Tasks
-- Monitor dashboard alerts
-- Check system resource usage
-- Review error logs
-- Verify backup status
+1. Update the version in `versions.env`
+2. Re-run the relevant installer command:
 
-#### Weekly Tasks
-- Review Prometheus storage usage
-- Clean up old Docker images
-- Update security patches
-- Check disk space trends
-
-#### Monthly Tasks
-- Review and update alert rules
-- Performance optimization
-- Security audit
-- Documentation updates
-
-### Data Retention Configuration
-
-#### Prometheus Retention
 ```bash
-# Modify prometheus service in docker-compose.yml
-command:
-  - '--storage.tsdb.retention.time=30d'
-  - '--storage.tsdb.retention.size=10GB'
+# Monitor server upgrade
+docker compose pull && docker compose up -d
+
+# Linux workers upgrade (re-runs Ansible)
+./install.sh --linux
+
+# Kubernetes upgrade
+kubectl set image daemonset/alloy alloy=grafana/alloy:vNEW_VERSION -n monitoring
+kubectl rollout status daemonset/alloy -n monitoring
 ```
 
-#### Loki Retention
+### Backup
+
+```bash
+# Back up configuration files
+BACKUP_DIR=~/monitoring-backup/$(date +%Y%m%d)
+mkdir -p "$BACKUP_DIR"
+cp -r config/ grafana/ versions.env docker-compose.yml "$BACKUP_DIR/"
+
+# Back up Prometheus data
+docker run --rm \
+  -v portable_monitoring_agent_prometheus_data:/data \
+  -v "$BACKUP_DIR":/backup \
+  alpine tar czf /backup/prometheus-data.tar.gz -C /data .
+
+# Back up Loki data
+docker run --rm \
+  -v portable_monitoring_agent_loki_data:/data \
+  -v "$BACKUP_DIR":/backup \
+  alpine tar czf /backup/loki-data.tar.gz -C /data .
+```
+
+### Data retention
+
+Configured in `config/prometheus/prometheus.yml` (30 days default):
 ```yaml
-# In loki-config.yaml
-table_manager:
-  retention_deletes_enabled: true
-  retention_period: 744h  # 31 days
+# docker-compose.yml — prometheus command flags
+--storage.tsdb.retention.time=30d
+--storage.tsdb.retention.size=20GB
 ```
 
-### Backup Procedures
-
-#### Configuration Backup
-```bash
-# Create backup directory
-mkdir -p ~/monitoring-backup/$(date +%Y%m%d)
-
-# Backup configurations
-cp ~/monitoring/docker-compose.yml ~/monitoring-backup/$(date +%Y%m%d)/
-cp ~/monitoring/prometheus.yml ~/monitoring-backup/$(date +%Y%m%d)/
-cp ~/monitoring/loki-config.yaml ~/monitoring-backup/$(date +%Y%m%d)/
-cp ~/monitoring/promtail-config.yaml ~/monitoring-backup/$(date +%Y%m%d)/
-
-# Backup Grafana dashboards
-docker exec grafana grafana-cli admin export-dashboard > ~/monitoring-backup/$(date +%Y%m%d)/dashboards.json
-```
-
-#### Data Backup
-```bash
-# Stop services
-docker-compose down
-
-# Backup volumes
-docker run --rm -v monitoring_prometheus_data:/data -v $(pwd):/backup alpine tar czf /backup/prometheus-data-$(date +%Y%m%d).tar.gz -C /data .
-docker run --rm -v monitoring_grafana_data:/data -v $(pwd):/backup alpine tar czf /backup/grafana-data-$(date +%Y%m%d).tar.gz -C /data .
-docker run --rm -v monitoring_loki_data:/data -v $(pwd):/backup alpine tar czf /backup/loki-data-$(date +%Y%m%d).tar.gz -C /data .
-
-# Start services
-docker-compose up -d
-```
-
-### Updates and Upgrades
-
-#### Updating Container Images
-```bash
-# Update all images
-docker-compose pull
-
-# Restart services with new images
-docker-compose down
-docker-compose up -d
-
-# Clean up old images
-docker image prune -f
-```
-
-#### System Updates
-```bash
-# Update Ubuntu packages
-sudo apt update && sudo apt upgrade -y
-
-# Update Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-```
-
-### Performance Tuning
-
-#### Prometheus Optimization
-- Adjust scrape intervals based on requirements
-- Configure recording rules for complex queries
-- Optimize storage settings
-- Implement federation for large deployments
-
-#### Grafana Optimization
-- Use template variables for dynamic dashboards
-- Implement query caching
-- Optimize panel queries
-- Set appropriate refresh intervals
-
-## Security Considerations
-
-### Network Security
-
-#### Firewall Configuration
-```bash
-# Monitoring node - restrictive approach
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow from trusted-subnet to any port 22
-sudo ufw allow from trusted-subnet to any port 3000
-sudo ufw allow from worker-nodes to any port 9090
-sudo ufw allow from worker-nodes to any port 3100
-sudo ufw enable
-```
-
-#### VPN/Private Network
-- Deploy monitoring stack on private network
-- Use VPN for external access
-- Implement network segmentation
-- Use jump hosts for SSH access
-
-### Authentication and Authorization
-
-#### Grafana Security
-```bash
-# Change default credentials immediately
-# Configure LDAP/OAuth integration
-# Implement role-based access control
-# Enable session security
-```
-
-#### Prometheus Security
-- Implement basic authentication
-- Use reverse proxy (nginx/Apache)
-- Configure IP whitelisting
-- Enable TLS/SSL
-
-### Container Security
-
-#### Docker Security Best Practices
-```bash
-# Run containers as non-root user
-# Use official images only
-# Regularly update images
-# Implement resource limits
-# Use Docker secrets for sensitive data
-```
-
-#### Example Secure Configuration
+Loki retention configured in `config/loki/loki-config.yaml` (30 days default):
 ```yaml
-services:
-  grafana:
-    image: grafana/grafana:latest
-    user: "472:472"  # grafana user
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
-    secrets:
-      - grafana_password
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
-secrets:
-  grafana_password:
-    file: ./secrets/grafana_password.txt
+limits_config:
+  retention_period: 720h   # 30 days
 ```
 
-### Data Security
+---
 
-#### Encryption
-- Enable TLS for all web interfaces
-- Encrypt data at rest
-- Use encrypted communication between components
-- Implement log sanitization
+## Security Notes
 
-#### Access Control
-- Implement principle of least privilege
-- Regular access reviews
-- Multi-factor authentication
-- Audit logging
+- **Grafana password**: Change the default `admin/admin` immediately. Set `GF_SECURITY_ADMIN_PASSWORD` in a `.env` file (gitignored) rather than editing `docker-compose.yml`.
+- **Windows credentials**: Use `ansible-vault encrypt_string` for the WinRM password — never commit plain-text passwords to git.
+- **Network**: Workers only need outbound access on ports 9090 and 3100 to the monitor server. No inbound ports need to be opened on workers.
+- **Loki**: Authentication is disabled by default (`auth_enabled: false`). For production, place Loki behind a reverse proxy with basic auth or use Grafana's built-in auth proxy.
 
-### Monitoring Security Events
+---
 
-#### Security Dashboard
-Create dashboards to monitor:
-- Failed login attempts
-- Unusual network traffic
-- System changes
-- Resource anomalies
+## Resources
 
-#### Security Alerts
-```yaml
-# Security-focused alert rules
-- alert: SuspiciousLoginAttempts
-  expr: increase(node_ssh_failed_attempts_total[5m]) > 5
-  for: 1m
-  labels:
-    severity: warning
-  annotations:
-    summary: "Multiple failed SSH attempts detected"
-
-- alert: UnusualNetworkTraffic
-  expr: rate(node_network_receive_bytes_total[5m]) > 100000000  # 100MB/s
-  for: 2m
-  labels:
-    severity: warning
-  annotations:
-    summary: "Unusual network traffic detected"
-```
-
-## Conclusion
-
-This monitoring stack provides comprehensive observability for your infrastructure with:
-
-- **Metrics Collection**: Complete system and application metrics
-- **Log Aggregation**: Centralized log management and analysis
-- **Visualization**: Rich dashboards and real-time monitoring
-- **Alerting**: Proactive issue detection and notification
-- **Scalability**: Easy to add new nodes and services
-- **Automation**: Ansible-driven deployment and configuration
-
-### Next Steps
-
-1. **Customize Dashboards**: Create specific dashboards for your applications
-2. **Extend Monitoring**: Add application-specific exporters
-3. **Implement Alerting**: Configure notification channels and alert rules
-4. **Optimize Performance**: Fine-tune based on your workload
-5. **Enhance Security**: Implement additional security measures
-6. **Plan Scaling**: Prepare for horizontal scaling needs
-
-### Additional Resources
-
+- [Grafana Alloy Documentation](https://grafana.com/docs/alloy/latest/)
+- [Grafana Alloy Component Reference](https://grafana.com/docs/alloy/latest/reference/components/)
 - [Prometheus Documentation](https://prometheus.io/docs/)
-- [Grafana Documentation](https://grafana.com/docs/)
-- [Loki Documentation](https://grafana.com/docs/loki/)
-- [Node Exporter Documentation](https://github.com/prometheus/node_exporter)
-- [Promtail Documentation](https://grafana.com/docs/loki/latest/clients/promtail/)
+- [Loki Documentation](https://grafana.com/docs/loki/latest/)
+- [Grafana Documentation](https://grafana.com/docs/grafana/latest/)
+- [Alertmanager Documentation](https://prometheus.io/docs/alerting/latest/alertmanager/)
 
 For issues and contributions, visit the [GitHub repository](https://github.com/KasiRamaKrishnan/portable_monitoring_agent).
