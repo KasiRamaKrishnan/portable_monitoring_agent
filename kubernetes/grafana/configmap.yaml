@@ -21,6 +21,15 @@ data:
         url: http://loki.monitoring.svc.cluster.local:3100
         access: proxy
         editable: false
+
+      - name: Alertmanager
+        type: alertmanager
+        uid: alertmanager
+        url: http://alertmanager.monitoring.svc.cluster.local:9093
+        access: proxy
+        editable: false
+        jsonData:
+          implementation: prometheus
 ---
 apiVersion: v1
 kind: ConfigMap

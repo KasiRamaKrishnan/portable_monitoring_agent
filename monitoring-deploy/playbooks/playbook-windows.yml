@@ -1,129 +1,129 @@
 ---
-# Ansible Playbook: Setup Windows Exporter and Promtail on Windows nodes
+# =============================================================================
+# Ansible Playbook: Deploy Grafana Alloy on Windows Worker Nodes
+# Replaces: Windows Exporter service + Promtail service (2 separate tools)
+#
+# Alloy is installed via its official Windows MSI installer.
+# It collects Windows metrics AND Event Logs, then pushes both to the monitor.
+#
 # Requirements:
-#   - WinRM must be enabled on target hosts (run Enable-PSRemoting as Admin)
-#   - pywinrm installed on control node: pip install pywinrm
-#   - Windows nodes listed under [windows_workers] in inventory.ini
+#   - WinRM enabled on target: run Enable-PSRemoting as Administrator
+#   - pywinrm on control node: pip install pywinrm
+#   - Inventory: hosts listed under [windows_workers]
+# =============================================================================
 
-- name: Setup Windows Exporter and Promtail on Windows nodes
+- name: Deploy Grafana Alloy on Windows worker nodes
   hosts: windows_workers
   gather_facts: yes
 
   vars:
-    windows_exporter_version: "0.25.1"
-    promtail_version: "2.9.4"
-    windows_exporter_port: 9182
-    promtail_port: 9080
-    install_dir: 'C:\monitoring'
-    promtail_data_dir: 'C:\monitoring\promtail-data'
-    windows_exporter_url: "https://github.com/prometheus-community/windows_exporter/releases/download/v{{ windows_exporter_version }}/windows_exporter-{{ windows_exporter_version }}-amd64.exe"
-    promtail_url: "https://github.com/grafana/loki/releases/download/v{{ promtail_version }}/promtail-windows-amd64.exe.zip"
+    alloy_version: "1.3.1"
+    install_dir: 'C:\Program Files\GrafanaLabs\Alloy'
+    config_dir: 'C:\Program Files\GrafanaLabs\Alloy'
+    data_dir: 'C:\ProgramData\Alloy'
+    alloy_msi_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe.zip"
+    alloy_service_name: "Alloy"
+    monitor_ip: "{{ hostvars['monitor_node']['ansible_host'] }}"
 
   tasks:
-    - name: Create monitoring installation directory
+
+    # ─── Create directories ────────────────────────────────────────────────────
+    - name: Create Alloy data directory
       win_file:
-        path: "{{ install_dir }}"
+        path: "{{ data_dir }}"
         state: directory
 
-    - name: Create Promtail data directory
+    - name: Create temp download directory
       win_file:
-        path: "{{ promtail_data_dir }}"
+        path: 'C:\temp\alloy-install'
         state: directory
 
-    # ─── Windows Exporter ────────────────────────────────────────────────────
-
-    - name: Download Windows Exporter
-      win_get_url:
-        url: "{{ windows_exporter_url }}"
-        dest: "{{ install_dir }}\\windows_exporter.exe"
-        force: no
-
-    - name: Install Windows Exporter as a Windows service
+    # ─── Download and install Alloy ───────────────────────────────────────────
+    - name: Check if Alloy is already installed
       win_service:
-        name: windows_exporter
-        path: >-
-          "{{ install_dir }}\windows_exporter.exe"
-          --collectors.enabled="cpu,cs,logical_disk,net,os,process,service,system,textfile,memory"
-          --telemetry.addr=:{{ windows_exporter_port }}
-        display_name: Windows Exporter (Prometheus)
-        description: Exposes Windows system metrics for Prometheus scraping
-        start_mode: auto
-        state: started
+        name: "{{ alloy_service_name }}"
+      register: alloy_svc_check
+      ignore_errors: yes
 
-    - name: Open firewall rule for Windows Exporter
-      win_firewall_rule:
-        name: "Windows Exporter {{ windows_exporter_port }}"
-        localport: "{{ windows_exporter_port }}"
-        action: allow
-        direction: in
-        protocol: tcp
-        state: present
-        enabled: yes
-
-    # ─── Promtail ─────────────────────────────────────────────────────────────
-
-    - name: Download Promtail for Windows (zip)
+    - name: Download Alloy Windows installer zip
       win_get_url:
-        url: "{{ promtail_url }}"
-        dest: "{{ install_dir }}\\promtail.zip"
+        url: "{{ alloy_msi_url }}"
+        dest: 'C:\temp\alloy-install\alloy.zip'
         force: no
+      when: alloy_svc_check.state is not defined
 
-    - name: Unzip Promtail
+    - name: Unzip Alloy installer
       win_unzip:
-        src: "{{ install_dir }}\\promtail.zip"
-        dest: "{{ install_dir }}"
-        creates: "{{ install_dir }}\\promtail-windows-amd64.exe"
+        src: 'C:\temp\alloy-install\alloy.zip'
+        dest: 'C:\temp\alloy-install'
+        creates: 'C:\temp\alloy-install\alloy-installer-windows-amd64.exe'
+      when: alloy_svc_check.state is not defined
 
-    - name: Rename Promtail binary for convenience
-      win_copy:
-        src: "{{ install_dir }}\\promtail-windows-amd64.exe"
-        dest: "{{ install_dir }}\\promtail.exe"
-        remote_src: yes
-        force: no
-
-    - name: Deploy Promtail config from template
-      win_template:
-        src: "{{ playbook_dir }}/../files/promtail-windows.yaml.j2"
-        dest: "{{ install_dir }}\\promtail-config.yaml"
-
-    - name: Install Promtail as a Windows service (via NSSM or sc.exe)
+    - name: Install Alloy silently
       win_shell: |
-        $svcName = "promtail"
-        $svcPath = "{{ install_dir }}\promtail.exe"
-        $svcArgs = "-config.file={{ install_dir }}\promtail-config.yaml"
-        if (-not (Get-Service -Name $svcName -ErrorAction SilentlyContinue)) {
-            sc.exe create $svcName binPath= "$svcPath $svcArgs" start= auto
-            sc.exe description $svcName "Grafana Promtail log shipper"
-        }
-        Start-Service -Name $svcName -ErrorAction SilentlyContinue
+        & 'C:\temp\alloy-install\alloy-installer-windows-amd64.exe' /S `
+          /D="{{ install_dir }}"
       args:
         executable: powershell
+      when: alloy_svc_check.state is not defined
 
-    - name: Open firewall rule for Promtail
+    # ─── Deploy config from Jinja2 template ───────────────────────────────────
+    - name: Deploy Alloy config
+      win_template:
+        src: "{{ playbook_dir }}/../files/alloy-windows.alloy.j2"
+        dest: "{{ config_dir }}\\config.alloy"
+      notify: Restart Alloy Windows
+
+    # ─── Configure Alloy service ──────────────────────────────────────────────
+    - name: Set Alloy service config path via registry
+      win_regedit:
+        path: 'HKLM:\SYSTEM\CurrentControlSet\Services\Alloy'
+        name: ImagePath
+        data: '"{{ install_dir }}\alloy.exe" run "{{ config_dir }}\config.alloy" --stability.level=generally-available'
+        type: string
+      notify: Restart Alloy Windows
+
+    - name: Ensure Alloy service is started and set to automatic
+      win_service:
+        name: "{{ alloy_service_name }}"
+        state: started
+        start_mode: auto
+
+    # ─── Firewall rules ────────────────────────────────────────────────────────
+    - name: Open Alloy HTTP UI port (12345)
       win_firewall_rule:
-        name: "Promtail {{ promtail_port }}"
-        localport: "{{ promtail_port }}"
+        name: "Grafana Alloy UI"
+        localport: 12345
         action: allow
         direction: in
         protocol: tcp
         state: present
         enabled: yes
 
-    # ─── Verify services are running ──────────────────────────────────────────
+    # ─── Clean up installer ────────────────────────────────────────────────────
+    - name: Remove installer temp files
+      win_file:
+        path: 'C:\temp\alloy-install'
+        state: absent
+      ignore_errors: yes
 
-    - name: Verify Windows Exporter service is running
+    # ─── Verify ───────────────────────────────────────────────────────────────
+    - name: Verify Alloy service is running
       win_service:
-        name: windows_exporter
-        state: started
+        name: "{{ alloy_service_name }}"
+      register: alloy_final_status
 
-    - name: Verify Promtail service is running
-      win_shell: |
-        $svc = Get-Service -Name "promtail" -ErrorAction SilentlyContinue
-        if ($svc -and $svc.Status -eq "Running") { "OK" } else { "NOT_RUNNING" }
-      register: promtail_status
-      args:
-        executable: powershell
-
-    - name: Show Promtail status
+    - name: Show Alloy status
       debug:
-        msg: "Promtail service status: {{ promtail_status.stdout | trim }}"
+        msg:
+          - "Grafana Alloy running on {{ inventory_hostname }}"
+          - "Service state: {{ alloy_final_status.state }}"
+          - "Pushing metrics → http://{{ monitor_ip }}:9090/api/v1/write"
+          - "Pushing logs    → http://{{ monitor_ip }}:3100/loki/api/v1/push"
+          - "Alloy UI        → http://{{ ansible_host }}:12345"
+
+  handlers:
+    - name: Restart Alloy Windows
+      win_service:
+        name: "{{ alloy_service_name }}"
+        state: restarted

@@ -25,6 +25,7 @@ spec:
             - "--storage.tsdb.retention.time=30d"
             - "--web.enable-lifecycle"
             - "--web.enable-admin-api"
+            - "--web.enable-remote-write-receiver"   # Alloy agents push here
           ports:
             - name: web
               containerPort: 9090
@@ -58,6 +59,6 @@ spec:
             name: prometheus-config
         - name: prometheus-storage
           emptyDir: {}
-          # For production, use a PVC:
+          # For production, replace emptyDir with a PVC:
           # persistentVolumeClaim:
           #   claimName: prometheus-pvc

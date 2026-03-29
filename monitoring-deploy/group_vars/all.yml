@@ -1,16 +1,20 @@
+# =============================================================================
+# Ansible Group Variables
+# =============================================================================
+
+# ─── Monitor server ───────────────────────────────────────────────────────────
 monitor_ip: "{{ hostvars['monitor_node']['ansible_host'] }}"
 
-# Linux worker IPs (Node Exporter on port 9100)
-worker_ips: "{{ groups['workers'] | map('extract', hostvars, ['ansible_host']) | list }}"
+# ─── Component versions (mirrors versions.env) ───────────────────────────────
+# Update versions in versions.env — this file reads from it.
+alloy_version: "1.3.1"
 
-# Windows worker IPs (Windows Exporter on port 9182)
-# Populated automatically from [windows_workers] inventory group.
-# Set to [] if no Windows nodes are present.
-windows_worker_ips: "{{ groups['windows_workers'] | default([]) | map('extract', hostvars, ['ansible_host']) | list }}"
-
-# Set to true when deploying Prometheus inside a Kubernetes cluster
-kubernetes_enabled: false
-# k8s_api_server: "https://kubernetes.default.svc"
-
+# ─── Linux SSH credentials ────────────────────────────────────────────────────
 ansible_user: ubuntu
 ansible_ssh_private_key_file: ~/sree.pem
+
+# ─── Windows WinRM credentials ────────────────────────────────────────────────
+# Set ansible_password via ansible-vault or environment variable — do not
+# store passwords in plain text in version control.
+# Example: ansible-playbook playbook-windows.yml --ask-vault-pass
+# Or:      export ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass

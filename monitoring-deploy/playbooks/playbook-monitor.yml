@@ -1,102 +1,142 @@
-- name: Setup monitoring stack on monitor node
+---
+# =============================================================================
+# Ansible Playbook: Setup Monitor Server
+# Deploys the full monitoring backend using docker-compose.
+# Services: Prometheus, Loki, Grafana, Alertmanager
+#
+# Replaces: manual Docker build + supervisord monolithic container
+# =============================================================================
+
+- name: Setup monitoring server with docker-compose
   hosts: monitor
   become: yes
 
+  vars:
+    repo_dir: "/home/{{ ansible_user }}/portable_monitoring_agent"
+    compose_project: "monitoring"
+
   tasks:
-    - name: Install dependencies
+
+    # ─── System dependencies ─────────────────────────────────────────────────
+    - name: Install required packages
       apt:
         name:
           - git
           - docker.io
-          - python3-venv
+          - docker-compose-plugin
+          - python3-pip
+          - python3-docker
         update_cache: yes
         state: present
 
-    - name: Ensure Docker is running
+    - name: Start and enable Docker
       service:
         name: docker
         state: started
         enabled: yes
 
-    - name: Create Python virtual environment for monitoring
-      command: python3 -m venv /opt/monitoring-venv
-      args:
-        creates: /opt/monitoring-venv
+    - name: Add ansible user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
 
-    - name: Upgrade pip in virtual environment
-      command: /opt/monitoring-venv/bin/pip install --upgrade pip
-
-    - name: Install Docker SDK for Python in venv
-      pip:
-        name: docker
-        virtualenv: /opt/monitoring-venv
-
-    - name: Run Node Exporter
-      community.docker.docker_container:
-        name: node_exporter
-        image: quay.io/prometheus/node-exporter
-        ports:
-          - "9100:9100"
-        restart_policy: always
-        volumes:
-          - /proc:/host/proc:ro
-          - /sys:/host/sys:ro
-          - /:/rootfs:ro
-        command:
-          - "--path.procfs=/host/proc"
-          - "--path.sysfs=/host/sys"
-          - "--path.rootfs=/rootfs"
-
-    - name: Create Promtail data directory
+    # ─── Copy repo to monitor node ────────────────────────────────────────────
+    - name: Ensure repo directory exists
       file:
-        path: /var/lib/promtail
+        path: "{{ repo_dir }}"
         state: directory
-        owner: ubuntu
-        group: ubuntu
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
         mode: '0755'
 
-    - name: Copy Promtail Jinja template config to host
-      template:
-        src: ~/portable_monitoring_agent/monitoring-deploy/files/promtail-config.yaml.j2
-        dest: /opt/promtail-config.yaml
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
+    - name: Sync repository files to monitor node
+      synchronize:
+        src: "{{ playbook_dir }}/../../"
+        dest: "{{ repo_dir }}/"
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=__pycache__"
 
-    - name: Run Promtail container
-      docker_container:
-        name: promtail
-        image: grafana/promtail:2.9.4
-        network_mode: host
-        volumes:
-          - /var/log:/var/log
-          - /opt/promtail-config.yaml:/etc/promtail/promtail.yaml
-          - /var/lib/promtail:/var/lib/promtail
-        env:
-          MONITOR_IP: "{{ monitor_node_ip }}"
-        command: -config.file=/etc/promtail/promtail.yaml -config.expand-env=true
-        restart_policy: always
+    # ─── Create .env file from versions.env ───────────────────────────────────
+    # docker-compose reads .env automatically for variable substitution.
+    - name: Copy versions.env as .env for docker-compose
+      copy:
+        src: "{{ repo_dir }}/versions.env"
+        dest: "{{ repo_dir }}/.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+        remote_src: yes
 
+    # ─── Persistent data directories ─────────────────────────────────────────
+    # Docker named volumes handle this automatically, but ensure permissions.
+    - name: Ensure config directories exist
+      file:
+        path: "{{ repo_dir }}/{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      loop:
+        - config/prometheus
+        - config/loki
+        - config/alertmanager
+        - grafana/provisioning/datasources
+        - grafana/provisioning/dashboards
+        - grafana/dashboards
 
-    - name: Generate prometheus.yml dynamically
-      template:
-        src: /home/ubuntu/portable_monitoring_agent/monitoring-deploy/files/prometheus.yml.j2
-        dest: /home/ubuntu/portable_monitoring_agent/prometheus.yml
-
-
-    - name: Build Docker image for monitoring agent
-      command: docker build -t monitoring-agent-kasi .
+    # ─── Start stack with docker-compose ──────────────────────────────────────
+    - name: Pull latest images
+      command: docker compose pull
       args:
-        chdir: "/home/ubuntu/portable_monitoring_agent"
+        chdir: "{{ repo_dir }}"
+      register: pull_result
+      changed_when: "'Pulled' in pull_result.stdout"
 
-    - name: Run monitoring agent container
-      docker_container:
-        name: monitor_agent_machine
-        image: monitoring-agent-kasi
-        restart_policy: always
-        ports:
-          - "3000:3000"
-          - "9090:9090"
-          - "3100:3100"
-        volumes:
-          - "/home/ubuntu/portable_monitoring_agent/prometheus.yml:/etc/prometheus/prometheus.yml"
+    - name: Start monitoring stack (docker-compose up)
+      command: docker compose up -d --remove-orphans
+      args:
+        chdir: "{{ repo_dir }}"
+      register: compose_result
+
+    - name: Show docker-compose result
+      debug:
+        msg: "{{ compose_result.stdout_lines }}"
+
+    # ─── Verify all services are healthy ─────────────────────────────────────
+    - name: Wait for Prometheus to be healthy
+      uri:
+        url: "http://localhost:9090/-/healthy"
+        status_code: 200
+      register: prometheus_health
+      until: prometheus_health.status == 200
+      retries: 10
+      delay: 5
+
+    - name: Wait for Grafana to be healthy
+      uri:
+        url: "http://localhost:3000/api/health"
+        status_code: 200
+      register: grafana_health
+      until: grafana_health.status == 200
+      retries: 10
+      delay: 5
+
+    - name: Wait for Loki to be ready
+      uri:
+        url: "http://localhost:3100/ready"
+        status_code: 200
+      register: loki_health
+      until: loki_health.status == 200
+      retries: 15
+      delay: 5
+
+    - name: Print access URLs
+      debug:
+        msg:
+          - "=== Monitoring stack is running ==="
+          - "Grafana:      http://{{ ansible_host }}:3000  (admin / admin)"
+          - "Prometheus:   http://{{ ansible_host }}:9090"
+          - "Loki:         http://{{ ansible_host }}:3100"
+          - "Alertmanager: http://{{ ansible_host }}:9093"

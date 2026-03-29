@@ -1,0 +1,143 @@
+---
+# =============================================================================
+# Ansible Playbook: Deploy Grafana Alloy on Linux Worker Nodes
+# Replaces: Node Exporter container + Promtail container (2 separate tools)
+#
+# Alloy is installed as a systemd service via the official Grafana apt repo.
+# It collects system metrics AND logs, then pushes both to the monitor server.
+# =============================================================================
+
+- name: Deploy Grafana Alloy on Linux worker nodes
+  hosts: workers
+  become: yes
+
+  vars:
+    alloy_version: "{{ lookup('env', 'ALLOY_VERSION') | default('1.3.1', true) }}"
+    alloy_config_dir: /etc/alloy
+    alloy_data_dir: /var/lib/alloy
+    monitor_ip: "{{ hostvars['monitor_node']['ansible_host'] }}"
+
+  tasks:
+
+    # ─── Install Grafana Alloy via apt repo ───────────────────────────────────
+    - name: Install prerequisites for apt-key
+      apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+          - wget
+          - gnupg
+        update_cache: yes
+        state: present
+
+    - name: Add Grafana apt GPG key
+      shell: |
+        mkdir -p /etc/apt/keyrings
+        wget -q -O - https://apt.grafana.com/gpg.key \
+          | gpg --dearmor \
+          | tee /etc/apt/keyrings/grafana.gpg > /dev/null
+      args:
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Add Grafana apt repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+        filename: grafana
+        state: present
+
+    - name: Install Grafana Alloy
+      apt:
+        name: "alloy={{ alloy_version }}-1"
+        update_cache: yes
+        state: present
+      # If exact version pin fails, install latest stable:
+      rescue:
+        - name: Install latest Grafana Alloy (fallback)
+          apt:
+            name: alloy
+            update_cache: yes
+            state: present
+
+    # ─── Configure Alloy ──────────────────────────────────────────────────────
+    - name: Create Alloy config directory
+      file:
+        path: "{{ alloy_config_dir }}"
+        state: directory
+        owner: alloy
+        group: alloy
+        mode: '0750'
+
+    - name: Create Alloy data directory
+      file:
+        path: "{{ alloy_data_dir }}"
+        state: directory
+        owner: alloy
+        group: alloy
+        mode: '0750'
+
+    - name: Deploy Alloy config from template
+      template:
+        src: "{{ playbook_dir }}/../files/alloy-linux.alloy.j2"
+        dest: "{{ alloy_config_dir }}/config.alloy"
+        owner: alloy
+        group: alloy
+        mode: '0640'
+      notify: Restart Alloy
+
+    # ─── Allow Alloy to read system logs ─────────────────────────────────────
+    - name: Add alloy user to adm group (grants /var/log read access)
+      user:
+        name: alloy
+        groups: adm
+        append: yes
+
+    - name: Add alloy user to systemd-journal group (grants journal read access)
+      user:
+        name: alloy
+        groups: systemd-journal
+        append: yes
+
+    # ─── systemd service ──────────────────────────────────────────────────────
+    - name: Configure Alloy systemd environment
+      lineinfile:
+        path: /etc/default/alloy
+        regexp: '^CUSTOM_ARGS='
+        line: 'CUSTOM_ARGS="--stability.level=generally-available"'
+        create: yes
+
+    - name: Enable and start Alloy service
+      service:
+        name: alloy
+        state: started
+        enabled: yes
+
+    # ─── Verify ───────────────────────────────────────────────────────────────
+    - name: Wait for Alloy to start
+      wait_for:
+        port: 12345       # Alloy default HTTP UI port
+        host: localhost
+        delay: 5
+        timeout: 30
+
+    - name: Verify Alloy is healthy
+      uri:
+        url: "http://localhost:12345/-/ready"
+        status_code: 200
+      register: alloy_health
+      until: alloy_health.status == 200
+      retries: 6
+      delay: 5
+
+    - name: Show Alloy status
+      debug:
+        msg:
+          - "Grafana Alloy running on {{ inventory_hostname }}"
+          - "Pushing metrics → http://{{ monitor_ip }}:9090/api/v1/write"
+          - "Pushing logs    → http://{{ monitor_ip }}:3100/loki/api/v1/push"
+          - "Alloy UI        → http://{{ ansible_host }}:12345"
+
+  handlers:
+    - name: Restart Alloy
+      service:
+        name: alloy
+        state: restarted
