@@ -1,0 +1,61 @@
+# =============================================================================
+# Terraform Variable Values — Example
+#
+# Steps:
+#   1. Copy this file:   cp terraform.tfvars.example terraform.tfvars
+#   2. Fill in every value below
+#   3. Add terraform.tfvars to .gitignore (already done) — it contains secrets
+# =============================================================================
+
+# ─── AWS ─────────────────────────────────────────────────────────────────────
+
+# AWS region to deploy into
+aws_region = "us-east-1"
+
+# Environment label used in resource names and tags
+environment = "test"
+
+# ─── SSH / Access ─────────────────────────────────────────────────────────────
+
+# Name of an existing EC2 Key Pair (created in AWS Console → EC2 → Key Pairs)
+# Do NOT include the .pem extension — just the name, e.g. "my-key"
+key_pair_name = "your-key-pair-name"
+
+# Your public IP address in CIDR notation.
+# Find it: curl -s https://checkip.amazonaws.com && echo "/32"
+# Restrict this — do not leave as 0.0.0.0/0 in a real environment.
+allowed_ssh_cidr = "YOUR_PUBLIC_IP/32"
+
+# ─── Instance Sizes ───────────────────────────────────────────────────────────
+
+# Monitor server — needs enough RAM for Prometheus + Loki + Grafana + Alertmanager
+# t3.medium (2 vCPU / 4 GB) is the minimum; t3.large recommended for real workloads
+monitor_instance_type = "t3.medium"
+
+# Linux worker nodes
+linux_worker_instance_type = "t3.small"
+linux_worker_count         = 2
+
+# Windows worker nodes (Windows needs more RAM — keep at t3.medium minimum)
+windows_worker_instance_type = "t3.medium"
+windows_worker_count         = 1
+
+# Windows Administrator password — must meet Windows complexity requirements:
+#   min 12 chars, uppercase + lowercase + digit + special character
+# WARNING: Keep this file out of git (it's in .gitignore)
+windows_admin_password = "ChangeMe@12345!"
+
+# ─── EKS Kubernetes Cluster ──────────────────────────────────────────────────
+
+eks_cluster_name       = "monitoring-test-cluster"
+eks_kubernetes_version = "1.29"
+eks_node_instance_type = "t3.medium"
+eks_node_min           = 2
+eks_node_desired       = 2
+eks_node_max           = 4
+
+# ─── Networking ───────────────────────────────────────────────────────────────
+
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
