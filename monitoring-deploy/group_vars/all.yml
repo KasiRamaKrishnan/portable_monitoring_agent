@@ -1,4 +1,16 @@
 monitor_ip: "{{ hostvars['monitor_node']['ansible_host'] }}"
+
+# Linux worker IPs (Node Exporter on port 9100)
 worker_ips: "{{ groups['workers'] | map('extract', hostvars, ['ansible_host']) | list }}"
+
+# Windows worker IPs (Windows Exporter on port 9182)
+# Populated automatically from [windows_workers] inventory group.
+# Set to [] if no Windows nodes are present.
+windows_worker_ips: "{{ groups['windows_workers'] | default([]) | map('extract', hostvars, ['ansible_host']) | list }}"
+
+# Set to true when deploying Prometheus inside a Kubernetes cluster
+kubernetes_enabled: false
+# k8s_api_server: "https://kubernetes.default.svc"
+
 ansible_user: ubuntu
 ansible_ssh_private_key_file: ~/sree.pem
