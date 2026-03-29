@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: alloy
+  namespace: monitoring
+  labels:
+    app: alloy
+spec:
+  selector:
+    matchLabels:
+      app: alloy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: alloy
+    spec:
+      serviceAccountName: alloy
+      tolerations:
+        # Run on all nodes including control-plane
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.3.1
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/var/lib/alloy
+            - --stability.level=generally-available
+          ports:
+            - name: http-metrics
+              containerPort: 12345
+          volumeMounts:
+            - name: alloy-config
+              mountPath: /etc/alloy
+            - name: alloy-storage
+              mountPath: /var/lib/alloy
+            # Host paths needed to collect node metrics and pod logs
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: root
+              mountPath: /host/root
+              readOnly: true
+              mountPropagation: HostToContainer
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: pods
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /-/ready
+              port: 12345
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 12345
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: alloy-config
+          configMap:
+            name: alloy-config
+        - name: alloy-storage
+          hostPath:
+            path: /var/lib/alloy
+            type: DirectoryOrCreate
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: root
+          hostPath:
+            path: /
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: pods
+          hostPath:
+            path: /var/log/pods
+        - name: containers
+          hostPath:
+            path: /var/lib/docker/containers

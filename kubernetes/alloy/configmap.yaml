@@ -1,0 +1,215 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: monitoring
+data:
+  config.alloy: |
+    // =========================================================================
+    // Grafana Alloy — Kubernetes DaemonSet Configuration
+    // Replaces: Node Exporter DaemonSet + Promtail DaemonSet (2 separate tools)
+    //
+    // This single Alloy agent on each node collects:
+    //   1. Node-level metrics via kubelet + cAdvisor
+    //   2. All pod container logs via Kubernetes log discovery
+    //   3. Kubernetes Events as structured logs
+    //
+    // Everything is PUSHED to in-cluster Prometheus and Loki via remote_write.
+    // =========================================================================
+
+    // ─── Node Metrics: kubelet /metrics ──────────────────────────────────────
+    discovery.kubernetes "nodes" {
+      role = "node"
+    }
+
+    prometheus.scrape "kubelet" {
+      targets    = discovery.kubernetes.nodes.targets
+      forward_to = [prometheus.remote_write.in_cluster.receiver]
+
+      scheme     = "https"
+      metrics_path = "/metrics"
+      tls_config {
+        ca_file              = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        insecure_skip_verify = true
+      }
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      scrape_interval   = "15s"
+
+      relabeling_rules {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+      relabeling_rules {
+        action = "labelmap"
+        regex  = "__meta_kubernetes_node_label_(.+)"
+      }
+    }
+
+    // ─── Node Metrics: cAdvisor (container resource usage) ───────────────────
+    prometheus.scrape "cadvisor" {
+      targets    = discovery.kubernetes.nodes.targets
+      forward_to = [prometheus.remote_write.in_cluster.receiver]
+
+      scheme       = "https"
+      metrics_path = "/metrics/cadvisor"
+      tls_config {
+        ca_file              = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        insecure_skip_verify = true
+      }
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      scrape_interval   = "15s"
+
+      relabeling_rules {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+    }
+
+    // ─── kube-state-metrics (Kubernetes object metrics) ──────────────────────
+    // Only one node in the DaemonSet should scrape kube-state-metrics.
+    // We use a single-replica Deployment for this, so all instances can scrape
+    // without deduplication issues (Prometheus deduplicates via remote_write).
+    discovery.kubernetes "kube_state_metrics" {
+      role = "endpoints"
+      namespaces {
+        names = ["monitoring"]
+      }
+      selectors {
+        role  = "endpoints"
+        label = "app=kube-state-metrics"
+      }
+    }
+
+    prometheus.scrape "kube_state_metrics" {
+      targets         = discovery.kubernetes.kube_state_metrics.targets
+      forward_to      = [prometheus.remote_write.in_cluster.receiver]
+      scrape_interval = "30s"
+    }
+
+    // ─── Auto-discover pods with prometheus.io/scrape=true ───────────────────
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+
+    discovery.relabel "annotated_pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        action        = "keep"
+        regex         = "true"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+        action        = "replace"
+        target_label  = "__metrics_path__"
+        regex         = "(.+)"
+      }
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        action        = "replace"
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+        replacement   = "$1:$2"
+        target_label  = "__address__"
+      }
+      rule {
+        action = "labelmap"
+        regex  = "__meta_kubernetes_pod_label_(.+)"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+    }
+
+    prometheus.scrape "annotated_pods" {
+      targets         = discovery.relabel.annotated_pods.output
+      forward_to      = [prometheus.remote_write.in_cluster.receiver]
+      scrape_interval = "15s"
+    }
+
+    // ─── Push Metrics to Prometheus ───────────────────────────────────────────
+    prometheus.remote_write "in_cluster" {
+      endpoint {
+        url = "http://prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
+        queue_config {
+          capacity             = 10000
+          max_shards           = 50
+          max_samples_per_send = 2000
+        }
+      }
+
+      external_labels = {
+        cluster  = "default",
+        platform = "kubernetes",
+      }
+    }
+
+    // ─── Pod Container Logs ───────────────────────────────────────────────────
+    discovery.kubernetes "pods_logs" {
+      role = "pod"
+    }
+
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pods_logs.targets
+
+      // Only collect logs from pods on this node
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "__host__"
+      }
+      rule {
+        action = "labelmap"
+        regex  = "__meta_kubernetes_pod_label_(.+)"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        separator     = "/"
+        target_label  = "__path__"
+        replacement   = "/var/log/pods/*$1/*.log"
+      }
+    }
+
+    loki.source.kubernetes "pod_logs" {
+      targets    = discovery.relabel.pod_logs.output
+      forward_to = [loki.write.in_cluster.receiver]
+    }
+
+    // ─── Kubernetes Events as Logs ────────────────────────────────────────────
+    loki.source.kubernetes_events "events" {
+      job_name   = "kubernetes-events"
+      log_format = "json"
+      forward_to = [loki.write.in_cluster.receiver]
+      labels = {
+        job      = "kubernetes-events",
+        platform = "kubernetes",
+      }
+    }
+
+    // ─── Push Logs to Loki ────────────────────────────────────────────────────
+    loki.write "in_cluster" {
+      endpoint {
+        url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+      }
+      external_labels = {
+        cluster  = "default",
+        platform = "kubernetes",
+      }
+    }

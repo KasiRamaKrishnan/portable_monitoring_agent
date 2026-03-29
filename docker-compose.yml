@@ -1,0 +1,139 @@
+# =============================================================================
+# Portable Monitoring Agent — Monitor Server Stack
+# Replaces: Dockerfile + supervisord.conf (monolithic container)
+#
+# Each service is now independent:
+#   - Restart one without affecting others
+#   - Scale, upgrade, and debug independently
+#   - Resource limits per service
+#
+# Usage:
+#   docker compose up -d            # Start all services
+#   docker compose down             # Stop all services
+#   docker compose logs -f grafana  # Tail a single service log
+#   docker compose pull             # Pull latest pinned images
+# =============================================================================
+
+# Load version pins from versions.env
+# docker compose automatically reads .env in the same directory.
+# Copy versions.env → .env  or  run: set -a && source versions.env && set +a
+
+services:
+
+  # ─── Prometheus ─────────────────────────────────────────────────────────────
+  # Receives metrics pushed by Grafana Alloy agents via remote_write.
+  # --web.enable-remote-write-receiver is the key flag that opens the push endpoint.
+  prometheus:
+    image: prom/prometheus:v${PROMETHEUS_VERSION:-2.52.0}
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+      - "--web.enable-remote-write-receiver"   # Alloy agents push here
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Alertmanager ───────────────────────────────────────────────────────────
+  # Routes Prometheus alerts to Slack, email, PagerDuty, etc.
+  # Configure notification channels in config/alertmanager/alertmanager.yml
+  alertmanager:
+    image: prom/alertmanager:v${ALERTMANAGER_VERSION:-0.27.0}
+    container_name: alertmanager
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Loki ───────────────────────────────────────────────────────────────────
+  # Receives logs pushed by Grafana Alloy agents.
+  # Data is persisted in a named Docker volume (not /tmp).
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-2.9.4}
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/var/lib/loki
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ─── Grafana ─────────────────────────────────────────────────────────────────
+  # OSS edition (not Enterprise — no license required).
+  # Datasources and dashboards are auto-provisioned from config files.
+  # Default login: admin / admin  → change GF_SECURITY_ADMIN_PASSWORD below.
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-10.4.1}
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}  # Override via .env file
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  grafana_data:
+    driver: local
